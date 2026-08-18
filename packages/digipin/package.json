@@ -1,0 +1,19 @@
+{
+  "name": "@civictrace/digipin",
+  "version": "0.1.0",
+  "description": "High-performance TypeScript encoder/decoder for India's 10-character DIGIPIN spatial grid",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test dist/tests/digipin.test.js"
+  },
+  "keywords": ["digipin", "gis", "india", "geocoding", "spatial-indexing"],
+  "author": "CivicTrace Core Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3"
+  }
+}

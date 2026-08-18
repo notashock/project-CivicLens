@@ -1,0 +1,19 @@
+{
+  "name": "@civictrace/crypto-nullifier",
+  "version": "0.1.0",
+  "description": "Hardware-attested WebAuthn PRF and HMAC-SHA256 single-action anti-Sybil nullifier engine",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test dist/tests/nullifier.test.js"
+  },
+  "keywords": ["anti-sybil", "webauthn", "nullifier", "zero-knowledge", "hmac"],
+  "author": "CivicTrace Core Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3"
+  }
+}

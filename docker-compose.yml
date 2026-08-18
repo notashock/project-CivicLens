@@ -1,0 +1,50 @@
+services:
+  # 1. PostgreSQL 16 + PostGIS 3.4
+  db:
+    image: postgis/postgis:16-3.4
+    restart: always
+    environment:
+      POSTGRES_DB: civictrace
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: civictrace_secure_password_2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d civictrace"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. FastAPI Backend Service with Real-time WebSockets & SSE
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:civictrace_secure_password_2026@db:5432/civictrace
+      CORS_ORIGINS: "*"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 3. Next.js 15 PWA Frontend (Soft Editorial Neo-Brutalism)
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

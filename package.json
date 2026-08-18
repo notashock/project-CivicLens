@@ -1,0 +1,19 @@
+{
+  "name": "civictrace-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CivicTrace: Anonymous, community-verified civic accountability platform",
+  "workspaces": [
+    "packages/*",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm.cmd run dev --workspace=apps/web",
+    "build": "npm.cmd run build --workspaces --if-present",
+    "test": "npm.cmd run test --workspaces --if-present",
+    "lint": "npm.cmd run lint --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@civictrace/sanitization-worker",
+  "version": "0.1.0",
+  "description": "Modular client validation pipeline for OffscreenCanvas pre-blurring and structured factual narrative moderation",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test dist/tests/sanitization.test.js"
+  },
+  "keywords": ["media-sanitization", "neutrality-filter", "canvas-blur", "civic-moderation"],
+  "author": "CivicTrace Core Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3"
+  }
+}

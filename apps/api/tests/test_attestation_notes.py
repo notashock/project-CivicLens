@@ -32,8 +32,19 @@ def test_on_site_attestation_note_promotes_photo_and_increments_consensus():
     assert res.status_code == 201
     note_data = res.json()
     assert note_data["is_consensus_verified"] is True
+    assert note_data["participant_badge"] == "Local Eyewitness"
+    assert "lat" not in note_data
+    assert "lon" not in note_data
+    assert "nullifier_hash" not in note_data
     assert note_data["stance"] == "CONFIRM"
     assert len(note_data["media_urls"]) == 1
+
+    # Verify notes list endpoint also strips coordinates and nullifier hash
+    notes_list = client.get(f"/api/v1/issues/{issue_id}/notes").json()
+    assert len(notes_list) >= 1
+    assert "lat" not in notes_list[0]
+    assert "lon" not in notes_list[0]
+    assert "nullifier_hash" not in notes_list[0]
 
     # Verify issue state updated
     updated_issue = client.get(f"/api/v1/issues/{issue_id}").json()
@@ -67,6 +78,10 @@ def test_remote_attestation_note_accepted_without_quorum_promotion():
     note_data = res.json()
     # Note is accepted for transparency, but NOT marked as consensus verified
     assert note_data["is_consensus_verified"] is False
+    assert note_data["participant_badge"] == "Community Contributor"
+    assert "lat" not in note_data
+    assert "lon" not in note_data
+    assert "nullifier_hash" not in note_data
     assert note_data["stance"] == "CONFIRM"
 
     # Verify issue consensus counts and evidence gallery DID NOT promote remote submission

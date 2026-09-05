@@ -1,5 +1,6 @@
 import json
 import asyncio
+import re
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
@@ -14,6 +15,7 @@ from .models import (
     VerificationRequest,
     ResolutionClaimRequest,
     CommunityNoteCreateRequest,
+    CommunityNoteResponse,
     IssueCategory,
     IssueStatus,
     ActionType,
@@ -23,6 +25,25 @@ from .database import db
 from .adapters.base import global_event_broadcaster
 from .services.digipin_service import haversine_distance_meters
 from .services.nullifier_service import global_nullifier_registry
+
+def get_client_ip(request: Optional[Request]) -> str:
+    if not request:
+        return "127.0.0.1"
+    forwarded = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "127.0.0.1"
+
+def enforce_rate_limit(request: Optional[Request], action: str, limit_per_minute: int):
+    ip = get_client_ip(request)
+    if not global_nullifier_registry.check_action_rate_limit(ip, action, limit_per_minute):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Rate limit exceeded for {action.lower()} operations. Please wait a moment before submitting again.",
+            headers={"Retry-After": "60"}
+        )
 from .services.intake_service import intake_service
 from .services.neutrality_filter import neutrality_filter
 from .state_machine import transition_issue_state
@@ -141,7 +162,10 @@ async def get_geojson_layer(
     }
 
 @app.post("/api/v1/issues/report", status_code=status.HTTP_201_CREATED)
-async def report_issue(payload: IssueCreateRequest):
+async def report_issue(payload: IssueCreateRequest, request: Request = None):
+    # Tiered IP rate limit (10 req/min for report)
+    enforce_rate_limit(request, "REPORT", 10)
+
     # Neutrality and defamation validation on initial report
     is_valid, error_msg = neutrality_filter.validate_submission(
         text=f"{payload.observed_condition} {payload.landmark}",
@@ -173,14 +197,27 @@ async def report_issue(payload: IssueCreateRequest):
         })
     return issue
 
-@app.get("/api/v1/issues/{issue_id}/notes")
+@app.get("/api/v1/issues/{issue_id}/notes", response_model=List[CommunityNoteResponse])
 async def list_community_notes(issue_id: str):
     issue = await db.get_by_id(issue_id)
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue '{issue_id}' not found")
-    return await db.get_community_notes(issue_id)
+    raw_notes = await db.get_community_notes(issue_id)
+    return [
+        CommunityNoteResponse(
+            id=n["id"],
+            issue_id=n["issue_id"],
+            participant_badge=n["participant_badge"],
+            stance=n.get("stance", "NEUTRAL"),
+            is_consensus_verified=bool(n.get("is_consensus_verified", False)),
+            text=n["text"],
+            media_urls=n.get("media_urls") or [],
+            created_at=n["created_at"]
+        )
+        for n in raw_notes
+    ]
 
-@app.post("/api/v1/issues/{issue_id}/notes", status_code=status.HTTP_201_CREATED)
+@app.post("/api/v1/issues/{issue_id}/notes", status_code=status.HTTP_201_CREATED, response_model=CommunityNoteResponse)
 async def add_community_note(
     issue_id: str,
     payload: CommunityNoteCreateRequest,
@@ -190,13 +227,8 @@ async def add_community_note(
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue '{issue_id}' not found")
 
-    # 1. IP Burst Rate Limiting (ADR 0014)
-    client_ip = request.client.host if (request and request.client) else "127.0.0.1"
-    if not global_nullifier_registry.check_ip_rate_limit(client_ip):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Rate limit exceeded. Please wait a moment before submitting another update."
-        )
+    # 1. IP Burst Rate Limiting (ADR 0014, ADR 0015)
+    enforce_rate_limit(request, "NOTE", 30)
 
     # 2. Validation: Empty check
     stance = (payload.stance or "NEUTRAL").upper()
@@ -222,9 +254,23 @@ async def add_community_note(
 
     now = datetime.utcnow()
     now_ms = int(now.timestamp() * 1000)
-    badge = payload.participant_badge or f"Witness [{hex(now_ms)[-4:].upper()}]"
 
-    # 4. 15-Minute Stance Change Cooldown & Hardware Nullifier Checks (ADR 0014)
+    # 4. Spatial Proximity Check (<500m of DIGIPIN Centroid) for Consensus Quorum (ADR 0014, ADR 0015)
+    # Evaluated strictly in-memory; raw coordinates are never saved to database records.
+    is_consensus_verified = False
+    if payload.lat is not None and payload.lon is not None:
+        dist_m = haversine_distance_meters(payload.lat, payload.lon, issue.lat, issue.lon)
+        if dist_m <= 500.0:
+            is_consensus_verified = True
+
+    # Semantic badge without random codes or hex numbers
+    raw_badge = payload.participant_badge.strip() if (payload.participant_badge and payload.participant_badge.strip()) else None
+    if raw_badge and re.search(r"\[[0-9a-fA-F]+\]", raw_badge):
+        raw_badge = re.sub(r"\s*\[[0-9a-fA-F]+\]", "", raw_badge).strip() or None
+
+    badge = raw_badge or ("Local Eyewitness" if is_consensus_verified else "Community Contributor")
+
+    # 5. 15-Minute Stance Change Cooldown & Hardware Nullifier Checks (ADR 0014)
     if payload.nullifier_hash and stance != "NEUTRAL":
         can_change, remaining_sec = global_nullifier_registry.can_update_stance(
             issue_id=issue_id,
@@ -237,13 +283,6 @@ async def add_community_note(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Attestation stance change on cooldown. Next stance update available in {max(1, remaining_sec // 60)} minutes."
             )
-
-    # 5. Spatial Proximity Check (<500m of DIGIPIN Centroid) for Consensus Quorum (ADR 0014)
-    is_consensus_verified = False
-    if payload.lat is not None and payload.lon is not None:
-        dist_m = haversine_distance_meters(payload.lat, payload.lon, issue.lat, issue.lon)
-        if dist_m <= 500.0:
-            is_consensus_verified = True
 
     # 6. Process Consensus Quorum & Evidence Promotion if Physically Verified
     if is_consensus_verified and stance != "NEUTRAL" and payload.nullifier_hash:
@@ -297,7 +336,7 @@ async def add_community_note(
             "evidence_list": [e.model_dump() if hasattr(e, 'model_dump') else e.__dict__ for e in issue.evidence_list]
         })
 
-    # 7. Save Note record
+    # 7. Save Note record (Strip raw GPS - coordinates are never persisted)
     note_data = {
         "id": f"NOTE-{issue_id}-{now_ms}",
         "issue_id": issue_id,
@@ -305,8 +344,6 @@ async def add_community_note(
         "stance": stance,
         "is_consensus_verified": is_consensus_verified,
         "nullifier_hash": payload.nullifier_hash,
-        "lat": payload.lat,
-        "lon": payload.lon,
         "text": payload.text.strip(),
         "media_urls": payload.media_urls,
         "created_at": now.isoformat()
@@ -314,12 +351,27 @@ async def add_community_note(
 
     saved = await db.save_community_note(note_data)
 
+    # Clean public view - nullifier_hash, lat, and lon are completely scrubbed
+    public_note = {
+        "id": saved["id"],
+        "issue_id": saved["issue_id"],
+        "participant_badge": saved["participant_badge"],
+        "stance": saved["stance"],
+        "is_consensus_verified": saved["is_consensus_verified"],
+        "text": saved["text"],
+        "media_urls": saved.get("media_urls") or [],
+        "created_at": saved["created_at"]
+    }
+
     # Real-time event broadcast to all viewing clients
-    await global_event_broadcaster.broadcast("NOTE_ADDED", saved)
-    return saved
+    await global_event_broadcaster.broadcast("NOTE_ADDED", public_note)
+    return public_note
 
 @app.post("/api/v1/issues/{issue_id}/verify")
-async def verify_issue(issue_id: str, payload: VerificationRequest):
+async def verify_issue(issue_id: str, payload: VerificationRequest, request: Request = None):
+    # Tiered IP rate limit (30 req/min for verify)
+    enforce_rate_limit(request, "VERIFY", 30)
+
     issue = await intake_service.process_verification(issue_id, payload)
     await global_event_broadcaster.broadcast("ISSUE_VERIFIED", {
         "id": issue.id,
@@ -331,7 +383,10 @@ async def verify_issue(issue_id: str, payload: VerificationRequest):
     return issue
 
 @app.post("/api/v1/issues/{issue_id}/claim-resolution")
-async def claim_resolution(issue_id: str, payload: ResolutionClaimRequest):
+async def claim_resolution(issue_id: str, payload: ResolutionClaimRequest, request: Request = None):
+    # Tiered IP rate limit (5 req/min for claim)
+    enforce_rate_limit(request, "CLAIM", 5)
+
     issue = await intake_service.process_resolution_claim(issue_id, payload)
     await global_event_broadcaster.broadcast("ISSUE_VERIFIED", {
         "id": issue.id,

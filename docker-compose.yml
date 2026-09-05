@@ -32,6 +32,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health && curl -f http://localhost:8000/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   # 3. Next.js 15 PWA Frontend (Soft Editorial Neo-Brutalism)
   web:
@@ -44,7 +50,26 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+
+  # 4. Unified All-In-One Application Container (Alternative to multi-container setup)
+  # Run via: docker compose --profile unified up
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["unified"]
+    restart: always
+    ports:
+      - "3000:3000"
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:civictrace_secure_password_2026@db:5432/civictrace
+      CORS_ORIGINS: "*"
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:

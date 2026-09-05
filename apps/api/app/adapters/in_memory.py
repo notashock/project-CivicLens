@@ -25,6 +25,7 @@ class InMemoryDatabaseAdapter(DatabaseAdapter):
 
     def seed_initial_data(self):
         self._issues.clear()
+        self._community_notes.clear()
         now = datetime.utcnow()
 
         seed_data = [

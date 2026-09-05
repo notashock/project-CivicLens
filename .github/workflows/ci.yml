@@ -1,0 +1,75 @@
+name: CI - Connection & Unit Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node-unit-and-connection-tests:
+    name: Node.js Unit & Connection Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build monorepo packages & web application
+        run: npm run build
+
+      - name: Run Connection & Readiness Probing Tests
+        run: npm run test:orchestrator
+
+      - name: Run Monorepo Unit Tests
+        run: npm test
+
+  python-backend-tests:
+    name: Python Backend API & Connection Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r apps/api/requirements.txt
+
+      - name: Run Backend Unit & Endpoint Connection Tests
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m pytest apps/api/tests -v
+
+      - name: Verify Live API Server Boot & HTTP Connection
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000 &
+          sleep 4
+          curl -f http://127.0.0.1:8000/health
+          curl -f http://127.0.0.1:8000/ready

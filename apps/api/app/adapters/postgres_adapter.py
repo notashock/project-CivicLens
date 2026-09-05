@@ -430,7 +430,7 @@ class PostgresDatabaseAdapter(DatabaseAdapter):
         await self._ensure_pool()
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
-                """SELECT id, issue_id, participant_badge, stance, is_consensus_verified, nullifier_hash, lat, lon, text, media_urls, created_at 
+                """SELECT id, issue_id, participant_badge, stance, is_consensus_verified, text, media_urls, created_at 
                    FROM civic_community_notes 
                    WHERE issue_id = $1 
                    ORDER BY created_at DESC""",
@@ -448,9 +448,6 @@ class PostgresDatabaseAdapter(DatabaseAdapter):
                     "participant_badge": r["participant_badge"],
                     "stance": r.get("stance", "NEUTRAL") if "stance" in r else "NEUTRAL",
                     "is_consensus_verified": bool(r.get("is_consensus_verified", False)) if "is_consensus_verified" in r else False,
-                    "nullifier_hash": r.get("nullifier_hash"),
-                    "lat": r.get("lat"),
-                    "lon": r.get("lon"),
                     "text": r["text"],
                     "media_urls": media_urls or [],
                     "created_at": created_at
@@ -482,8 +479,8 @@ class PostgresDatabaseAdapter(DatabaseAdapter):
                 note.get("stance", "NEUTRAL"),
                 bool(note.get("is_consensus_verified", False)),
                 note.get("nullifier_hash"),
-                note.get("lat"),
-                note.get("lon"),
+                None, # Ephemeral proximity: raw lat is never persisted (ADR 0002, 0015)
+                None, # Ephemeral proximity: raw lon is never persisted (ADR 0002, 0015)
                 note.get("text", ""),
                 media_json,
                 created_at

@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import {
   validateAndFormatNarrative,
   pixelateRegions,
+  sanitizeMedia,
+  sanitizeObservation,
+  calculateFitDimensions,
+  DEFAULT_PRIVACY_REGIONS,
   StructuredObservation,
 } from '../src/index.js';
 
@@ -73,4 +77,87 @@ test('Canvas Pixelation modifies specified bounding box buffer', () => {
 
   // Assert that pixels in the region were averaged/pixelated
   assert.ok(buffer[0]! < 255);
+});
+
+test('calculateFitDimensions scales proportionally within bounds', () => {
+  // Wide image: 1600x1200 -> max 800 -> 800x600
+  const fitWide = calculateFitDimensions(1600, 1200, 800, 800);
+  assert.equal(fitWide.width, 800);
+  assert.equal(fitWide.height, 600);
+
+  // Tall image: 600x1800 -> max 800 -> 267x800
+  const fitTall = calculateFitDimensions(600, 1800, 800, 800);
+  assert.equal(fitTall.height, 800);
+  assert.ok(fitTall.width < 300);
+
+  // Small image does not upscale
+  const fitSmall = calculateFitDimensions(400, 300, 800, 800);
+  assert.equal(fitSmall.width, 400);
+  assert.equal(fitSmall.height, 300);
+});
+
+test('sanitizeMedia applies peripheral privacy regions in headless buffer mode', async () => {
+  const width = 64;
+  const height = 64;
+  const pixelData = new Uint8ClampedArray(width * height * 4);
+
+  // Set distinct pixels in the upper peripheral region (e.g. index 0)
+  pixelData[0] = 255;
+  pixelData[1] = 255;
+  pixelData[2] = 255;
+  pixelData[3] = 255;
+
+  const result = await sanitizeMedia(null, {
+    rawBufferInput: { pixelData, width, height },
+    preBlur: true,
+  });
+
+  assert.equal(result.isSanitized, true);
+  assert.ok(result.dataUrl.startsWith('data:image/webp;base64,'));
+  assert.equal(result.width, 64);
+  assert.equal(result.height, 64);
+  assert.ok(DEFAULT_PRIVACY_REGIONS.length === 2);
+});
+
+test('sanitizeObservation executes full unified sanitization pipeline', async () => {
+  const width = 32;
+  const height = 32;
+  const pixelData = new Uint8ClampedArray(width * height * 4);
+
+  const observation: StructuredObservation = {
+    category: 'SOLID_WASTE',
+    observedCondition: 'Overflowing municipal dumpster spilling onto pedestrian walkway',
+    landmark: 'Beside Government High School, 5th Main',
+    impactDurationDays: 4,
+  };
+
+  const result = await sanitizeObservation({
+    observation,
+    rawBufferInput: { pixelData, width, height },
+    preBlurEnabled: true,
+  });
+
+  assert.equal(result.isValid, true);
+  assert.equal(result.violations.length, 0);
+  assert.ok(result.sanitizedNarrative?.includes('Physical condition observed'));
+  assert.ok(result.sanitizedNarrative?.includes('Government High School'));
+  assert.ok(result.mediaDataBase64?.startsWith('data:image/webp;base64,'));
+  assert.equal(result.mediaMetadata?.isSanitized, true);
+});
+
+test('sanitizeObservation rejects non-neutral text and returns violations', async () => {
+  const observation: StructuredObservation = {
+    category: 'SOLID_WASTE',
+    observedCondition: 'MLA and corporator are useless thieves doing corruption',
+    landmark: 'Near town hall',
+  };
+
+  const result = await sanitizeObservation({
+    observation,
+  });
+
+  assert.equal(result.isValid, false);
+  assert.ok(result.violations.length > 0);
+  assert.equal(result.sanitizedNarrative, undefined);
+  assert.equal(result.mediaDataBase64, undefined);
 });

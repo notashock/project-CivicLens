@@ -2,3 +2,4 @@ export * from './constants';
 export * from './encoder';
 export * from './decoder';
 export * from './proximity';
+export * from './jurisdiction';

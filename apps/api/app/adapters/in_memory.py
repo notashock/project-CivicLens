@@ -3,13 +3,25 @@ from typing import List, Optional, Dict, Any
 from apps.api.app.adapters.base import DatabaseAdapter, global_event_broadcaster
 from apps.api.app.models import Issue, IssueStatus, IssueCategory, IssueEvent, EventType, EvidenceMedia
 
+class AwaitableSyncResult:
+    def __init__(self, value=None):
+        self.value = value
+
+    def __await__(self):
+        async def _wrapper():
+            return self.value
+        return _wrapper().__await__()
+
+
 class InMemoryDatabaseAdapter(DatabaseAdapter):
     """
     In-memory database adapter for test suites and zero-config local development.
     """
-    def __init__(self):
+    def __init__(self, seed: bool = False):
         self._issues: Dict[str, Issue] = {}
-        self.seed_initial_data()
+        self._community_notes: Dict[str, List[Dict[str, Any]]] = {}
+        if seed:
+            self.seed_initial_data()
 
     def seed_initial_data(self):
         self._issues.clear()
@@ -178,11 +190,12 @@ class InMemoryDatabaseAdapter(DatabaseAdapter):
 
         for issue in seed_data:
             self._issues[issue.id] = issue
+        return AwaitableSyncResult(None)
 
-    def get_by_id(self, issue_id: str) -> Optional[Issue]:
+    async def get_by_id(self, issue_id: str) -> Optional[Issue]:
         return self._issues.get(issue_id)
 
-    def get_all(
+    async def get_all(
         self,
         category: Optional[Any] = None,
         status: Optional[Any] = None,
@@ -212,6 +225,21 @@ class InMemoryDatabaseAdapter(DatabaseAdapter):
 
         return results
 
-    def save(self, issue: Issue) -> Issue:
+    async def save(self, issue: Issue) -> Issue:
         self._issues[issue.id] = issue
         return issue
+
+    async def get_community_notes(self, issue_id: str) -> List[Dict[str, Any]]:
+        if not hasattr(self, "_community_notes"):
+            self._community_notes = {}
+        notes = self._community_notes.get(issue_id, [])
+        return sorted(notes, key=lambda n: str(n.get("created_at", "")), reverse=True)
+
+    async def save_community_note(self, note: Dict[str, Any]) -> Dict[str, Any]:
+        if not hasattr(self, "_community_notes"):
+            self._community_notes = {}
+        issue_id = note["issue_id"]
+        if issue_id not in self._community_notes:
+            self._community_notes[issue_id] = []
+        self._community_notes[issue_id].append(note)
+        return note

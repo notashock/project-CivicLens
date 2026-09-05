@@ -40,7 +40,7 @@ def test_report_issue_success():
     response = client.post("/api/v1/issues/report", json=payload)
     assert response.status_code == 201
     data = response.json()
-    assert data["id"].startswith("CT-KA-BLR-")
+    assert data["id"].startswith("CT-ROAD-")
     assert data["status"] == "REPORTED"
     assert len(data["digipin_code"]) == 10
     assert "Near Marathahalli Bridge" in data["description_neutral"]
@@ -130,3 +130,30 @@ def test_geojson_endpoint():
     assert "geometry" in first_feat
     assert "properties" in first_feat
     assert "digipin" in first_feat["properties"]
+
+def test_claim_resolution_and_quorum_flow():
+    issue_id = "CT-KA-BLR-000101"
+    
+    # 1. Authority claims resolution
+    claim_payload = {
+        "claimant_id": "PWD Contractor #4402",
+        "notes": "Pothole filled with asphalt and steamrolled"
+    }
+    res_claim = client.post(f"/api/v1/issues/{issue_id}/claim-resolution", json=claim_payload)
+    assert res_claim.status_code == 200
+    claimed_issue = res_claim.json()
+    assert claimed_issue["status"] == "RESOLUTION_CLAIMED"
+    assert claimed_issue["resolution_window_expires_at"] is not None
+
+    # 2. Local community verification (Quorum confirmation)
+    verify_payload = {
+        "action_type": "RESOLUTION_VERIFY",
+        "nullifier_hash": "e" * 64,
+        "timestamp": int(time.time() * 1000),
+        "lat": 12.9716,
+        "lon": 77.5946
+    }
+    res_ver = client.post(f"/api/v1/issues/{issue_id}/verify", json=verify_payload)
+    assert res_ver.status_code == 200
+    data_ver = res_ver.json()
+    assert data_ver["verified_confirm_count"] == 1

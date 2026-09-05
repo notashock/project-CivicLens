@@ -1,7 +1,20 @@
 from enum import Enum
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
+import re
+
+MAX_IMAGE_BASE64_LENGTH = 5 * 1024 * 1024  # 5 MB base64 string cap
+VALID_IMAGE_DATA_URI_PATTERN = re.compile(r"^data:image\/(jpeg|jpg|png|webp);base64,", re.IGNORECASE)
+
+def validate_base64_image_payload(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return v
+    if len(v) > MAX_IMAGE_BASE64_LENGTH:
+        raise ValueError("Image payload exceeds maximum allowed size of 5MB")
+    if not (VALID_IMAGE_DATA_URI_PATTERN.match(v) or re.match(r"^[A-Za-z0-9+/=]+$", v[:64])):
+        raise ValueError("Invalid image format: must be valid JPEG, PNG, or WebP base64 data")
+    return v
 
 class IssueCategory(str, Enum):
     ROAD_HAZARD = "ROAD_HAZARD"
@@ -103,6 +116,11 @@ class IssueCreateRequest(BaseModel):
     timestamp: int
     media_data_base64: Optional[str] = None
 
+    @field_validator("media_data_base64")
+    @classmethod
+    def check_media(cls, v: Optional[str]) -> Optional[str]:
+        return validate_base64_image_payload(v)
+
 class VerificationRequest(BaseModel):
     action_type: ActionType
     nullifier_hash: str
@@ -111,10 +129,20 @@ class VerificationRequest(BaseModel):
     lon: float
     evidence_photo_base64: Optional[str] = None
 
+    @field_validator("evidence_photo_base64")
+    @classmethod
+    def check_photo(cls, v: Optional[str]) -> Optional[str]:
+        return validate_base64_image_payload(v)
+
 class ResolutionClaimRequest(BaseModel):
     claimant_id: str
     notes: str
     proof_photo_base64: Optional[str] = None
+
+    @field_validator("proof_photo_base64")
+    @classmethod
+    def check_proof(cls, v: Optional[str]) -> Optional[str]:
+        return validate_base64_image_payload(v)
 
 class CommunityNoteCreateRequest(BaseModel):
     participant_badge: Optional[str] = None
@@ -123,4 +151,24 @@ class CommunityNoteCreateRequest(BaseModel):
     lat: Optional[float] = None
     lon: Optional[float] = None
     text: str = Field(default="", max_length=2000)
+    media_urls: List[str] = Field(default_factory=list, max_length=3)
+
+    @field_validator("media_urls")
+    @classmethod
+    def check_media_urls(cls, v: List[str]) -> List[str]:
+        if len(v) > 3:
+            raise ValueError("Maximum of 3 evidence photos allowed per note")
+        for img in v:
+            validate_base64_image_payload(img)
+        return v
+
+class CommunityNoteResponse(BaseModel):
+    id: str
+    issue_id: str
+    participant_badge: str
+    stance: str
+    is_consensus_verified: bool
+    text: str
     media_urls: List[str] = Field(default_factory=list)
+    created_at: str
+

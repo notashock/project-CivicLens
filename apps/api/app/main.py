@@ -77,6 +77,19 @@ async def health_check():
         "timestamp": datetime.utcnow().isoformat()
     }
 
+@app.get("/ready")
+async def readiness_check():
+    from apps.api.app.adapters.postgres_adapter import PostgresDatabaseAdapter
+    is_postgres = isinstance(db, PostgresDatabaseAdapter)
+    db_ready = (getattr(db, "_pool", None) is not None) if is_postgres else True
+    if not db_ready:
+        raise HTTPException(status_code=503, detail="Database connection not ready")
+    return {
+        "status": "ready",
+        "service": "civictrace-core-api",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
 @app.get("/api/v1/issues")
 async def list_issues(
     category: Optional[str] = None,

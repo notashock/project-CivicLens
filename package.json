@@ -8,10 +8,14 @@
     "apps/web"
   ],
   "scripts": {
-    "dev": "npm.cmd run dev --workspace=apps/web",
-    "build": "npm.cmd run build --workspaces --if-present",
-    "test": "npm.cmd run test --workspaces --if-present",
-    "lint": "npm.cmd run lint --workspaces --if-present"
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "node scripts/dev.mjs --web-only",
+    "dev:api": "node scripts/dev.mjs --api-only",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:api": "python -m pytest apps/api",
+    "test:orchestrator": "node --test scripts/tests/orchestrator.test.mjs",
+    "lint": "npm run lint --workspaces --if-present"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

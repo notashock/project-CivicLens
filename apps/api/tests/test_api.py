@@ -162,3 +162,65 @@ def test_claim_resolution_and_quorum_flow():
     assert res_ver.status_code == 200
     data_ver = res_ver.json()
     assert data_ver["verified_confirm_count"] == 1
+
+def test_base64_image_size_limit_rejection():
+    # Attempt to upload an image exceeding the 5MB cap
+    oversized_base64 = "data:image/jpeg;base64," + ("A" * (5 * 1024 * 1024 + 100))
+    payload = {
+        "category": "ROAD_HAZARD",
+        "observed_condition": "Deep trench on road shoulder",
+        "landmark": "Near Marathahalli Bridge",
+        "impact_duration_days": 1,
+        "lat": 12.9562,
+        "lon": 77.7019,
+        "severity_score": 3,
+        "nullifier_hash": "f" * 64,
+        "timestamp": int(time.time() * 1000),
+        "media_data_base64": oversized_base64
+    }
+    response = client.post("/api/v1/issues/report", json=payload)
+    assert response.status_code == 422
+
+def test_base64_image_count_limit_rejection():
+    issue_id = "CT-KA-BLR-000101"
+    # Attempt to upload 4 photos when max is 3
+    valid_photo = "data:image/jpeg;base64,/9j/4AAQSkZJRg=="
+    payload = {
+        "text": "Too many photos attached",
+        "stance": "NEUTRAL",
+        "media_urls": [valid_photo, valid_photo, valid_photo, valid_photo]
+    }
+    response = client.post(f"/api/v1/issues/{issue_id}/notes", json=payload)
+    assert response.status_code == 422
+
+def test_tiered_ip_rate_limiting():
+    issue_id = "CT-KA-BLR-000101"
+    headers = {"X-Forwarded-For": "203.0.113.42"}
+
+    # CLAIM endpoint has a limit of 5 req/min
+    claim_payload = {
+        "claimant_id": "Test Authority",
+        "notes": "Testing rate limit threshold"
+    }
+
+    for i in range(5):
+        res = client.post(f"/api/v1/issues/{issue_id}/claim-resolution", json=claim_payload, headers=headers)
+        assert res.status_code == 200
+
+    # 6th request from same IP within 1 minute must return 429
+    res_blocked = client.post(f"/api/v1/issues/{issue_id}/claim-resolution", json=claim_payload, headers=headers)
+    assert res_blocked.status_code == 429
+    assert "rate limit exceeded" in res_blocked.json()["detail"].lower()
+    assert res_blocked.headers.get("retry-after") == "60"
+
+def test_proxy_ip_forwarded_for_rate_limiting():
+    issue_id = "CT-KA-BLR-000101"
+    # A different IP should NOT be blocked by the previous IP's rate limit
+    headers_different_ip = {"X-Forwarded-For": "198.51.100.99, 10.0.0.1"}
+    claim_payload = {
+        "claimant_id": "Different Authority",
+        "notes": "Testing independent IP bucket"
+    }
+    res = client.post(f"/api/v1/issues/{issue_id}/claim-resolution", json=claim_payload, headers=headers_different_ip)
+    assert res.status_code == 200
+

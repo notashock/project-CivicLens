@@ -17,6 +17,11 @@ def test_health_check():
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
 
+def test_readiness_check():
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+
 def test_list_issues():
     response = client.get("/api/v1/issues")
     assert response.status_code == 200

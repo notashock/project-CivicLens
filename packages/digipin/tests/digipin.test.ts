@@ -6,6 +6,7 @@ import {
   formatDigipin,
   isWithinProximityRadius,
   getDigipinHierarchies,
+  deriveIssueId,
 } from '../src/index.js';
 
 test('DIGIPIN Encoding & Decoding Roundtrip - Bengaluru', () => {
@@ -69,4 +70,11 @@ test('Out of bounds error handling', () => {
   assert.throws(() => encodeDigipin(50.0, 77.0), /Latitude 50 is outside India/);
   assert.throws(() => encodeDigipin(12.0, 120.0), /Longitude 120 is outside India/);
   assert.throws(() => decodeDigipin('INVALID123'), /Invalid DIGIPIN character/);
+});
+
+test('Deterministic IssueID derivation at intake seam', () => {
+  const result = deriveIssueId(12.9716, 77.5946, 'ROAD_HAZARD');
+  assert.equal(result.issueId.startsWith('CT-ROAD-'), true);
+  assert.equal(result.digipin.length, 10);
+  assert.equal(result.authority, 'Bruhat Bengaluru Mahanagara Palike (BBMP)');
 });

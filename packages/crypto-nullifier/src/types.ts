@@ -4,7 +4,8 @@ export type ActionType =
   | 'DISPUTE'
   | 'RESOLUTION_VERIFY'
   | 'RESOLUTION_DISPUTE'
-  | 'PERSPECTIVE';
+  | 'PERSPECTIVE'
+  | 'NEUTRAL';
 
 export interface NullifierPayload {
   issueId: string;

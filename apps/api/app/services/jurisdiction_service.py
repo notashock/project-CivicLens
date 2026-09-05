@@ -33,6 +33,9 @@ REGION_BOUNDARIES = [
     }
 ]
 
+from typing import Dict, Any, Tuple, Optional
+from ..models import IssueCategory
+
 DEPARTMENT_MAP: Dict[IssueCategory, str] = {
     IssueCategory.ROAD_HAZARD: "Major Roads & Infrastructure Division (PWD / ULB)",
     IssueCategory.DRAINAGE_WATER: "Water Supply and Sewerage Board (BWSSB / DJB)",
@@ -44,7 +47,7 @@ DEPARTMENT_MAP: Dict[IssueCategory, str] = {
 
 _serial_counter = 100
 
-def resolve_jurisdiction(lat: float, lon: float, category: IssueCategory) -> Dict[str, Any]:
+def resolve_jurisdiction(lat: float, lon: float, category: IssueCategory, digipin: Optional[str] = None) -> Dict[str, Any]:
     matched = None
     for region in REGION_BOUNDARIES:
         if (region["min_lat"] <= lat <= region["max_lat"] and
@@ -60,9 +63,15 @@ def resolve_jurisdiction(lat: float, lon: float, category: IssueCategory) -> Dic
             "authority": "State Public Works Department (PWD)",
         }
 
-    global _serial_counter
-    _serial_counter += 1
-    issue_id = f"CT-{matched['state_code']}-{matched['dist_code']}-{_serial_counter:06d}"
+    cat_val = category.value if hasattr(category, 'value') else str(category)
+    cat_prefix = "".join(c for c in cat_val if c.isalnum())[:4].upper()
+
+    if digipin:
+        issue_id = f"CT-{cat_prefix}-{digipin}"
+    else:
+        global _serial_counter
+        _serial_counter += 1
+        issue_id = f"CT-{cat_prefix}-{_serial_counter:06d}"
 
     department = DEPARTMENT_MAP.get(category, "General Grievance Cell")
 

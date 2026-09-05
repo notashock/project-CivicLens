@@ -15,30 +15,37 @@ import {
   Filter,
   ShieldCheck,
   ArrowRight,
-  Radio
+  Map as MapIcon,
+  List,
+  Compass,
+  X
 } from 'lucide-react';
 import { fetchIssues, fetchStats, subscribeToRealtimeEvents, Issue } from '@/lib/api';
 import { MapComponent } from '@/components/MapComponent';
 import { formatDigipin } from '@civictrace/digipin';
+import {
+  filterIssues,
+  getStatusPresentation,
+  computeFeedSummary,
+} from '@/lib/issue-feed-model';
 
 const CATEGORIES = [
-  { id: 'ALL', label: 'All Hazards', icon: Filter, bg: 'bg-white', text: 'text-zinc-900' },
-  { id: 'ROAD_HAZARD', label: 'Roads & Potholes', icon: AlertTriangle, bg: 'bg-[#FEF3C7]', text: 'text-amber-950' },
-  { id: 'DRAINAGE_WATER', label: 'Water & Sewage', icon: Droplets, bg: 'bg-[#E0F2FE]', text: 'text-sky-950' },
-  { id: 'SOLID_WASTE', label: 'Solid Waste', icon: Trash2, bg: 'bg-[#DCFCE7]', text: 'text-emerald-950' },
-  { id: 'ELECTRICAL_HAZARD', label: 'Electrical', icon: Zap, bg: 'bg-[#FFEDD5]', text: 'text-orange-950' },
-  { id: 'PUBLIC_INFRASTRUCTURE', label: 'Public Amenities', icon: Building2, bg: 'bg-[#F3E8FF]', text: 'text-purple-950' },
+  { id: 'ALL', label: 'All Hazards', icon: Filter },
+  { id: 'ROAD_HAZARD', label: 'Roads & Potholes', icon: AlertTriangle },
+  { id: 'DRAINAGE_WATER', label: 'Water & Drainage', icon: Droplets },
+  { id: 'SOLID_WASTE', label: 'Solid Waste', icon: Trash2 },
+  { id: 'ELECTRICAL_HAZARD', label: 'Electrical', icon: Zap },
+  { id: 'PUBLIC_INFRASTRUCTURE', label: 'Public Amenities', icon: Building2 },
 ];
 
 export default function HomePage() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
   const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [selectedStatus, setSelectedStatus] = useState('ALL');
   const [searchDigipin, setSearchDigipin] = useState('');
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [isLiveConnected, setIsLiveConnected] = useState(true);
+  const [viewMode, setViewMode] = useState<'map' | 'ledger'>('map');
 
   useEffect(() => {
     loadData();
@@ -74,19 +81,21 @@ export default function HomePage() {
     return () => {
       unsubscribe();
     };
-  }, [selectedCategory, selectedStatus]);
+  }, [selectedCategory]);
 
   const loadData = async () => {
     try {
       setLoading(true);
       const [issuesData, statsData] = await Promise.all([
-        fetchIssues(selectedCategory, selectedStatus),
+        fetchIssues(selectedCategory, 'ALL'),
         fetchStats(),
       ]);
       setIssues(issuesData);
       setStats(statsData);
       if (issuesData.length > 0 && !selectedIssue) {
-        setSelectedIssue(issuesData[0] || null);
+        if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+          setSelectedIssue(issuesData[0] || null);
+        }
       }
     } catch (err) {
       console.error('Failed to load issues', err);
@@ -95,58 +104,21 @@ export default function HomePage() {
     }
   };
 
-  const filteredIssues = issues.filter((i) => {
-    if (!searchDigipin) return true;
-    return (
-      i.digipin_code.toLowerCase().includes(searchDigipin.toLowerCase()) ||
-      i.id.toLowerCase().includes(searchDigipin.toLowerCase()) ||
-      i.description_neutral.toLowerCase().includes(searchDigipin.toLowerCase())
-    );
+  // Pure filtering through tested deep module
+  const filteredIssues = filterIssues(issues, {
+    category: selectedCategory,
+    search: searchDigipin,
   });
 
-  const getStatusStamp = (status: string) => {
-    switch (status) {
-      case 'COMMUNITY_CORROBORATED':
-        return (
-          <span className="stamp-badge bg-[#DCFCE7] text-emerald-950">
-            <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-800" /> Corroborated
-          </span>
-        );
-      case 'ESCALATED':
-        return (
-          <span className="stamp-badge bg-[#FFE4E6] text-rose-950">
-            <AlertTriangle className="w-3 h-3 mr-1 text-rose-800" /> SLA Escalated
-          </span>
-        );
-      case 'RESOLUTION_CLAIMED':
-        return (
-          <span className="stamp-badge bg-[#E0F2FE] text-sky-950">
-            <Clock className="w-3 h-3 mr-1 text-sky-800" /> 72h Resolution Quorum
-          </span>
-        );
-      case 'COMMUNITY_VERIFIED':
-      case 'RESOLVED':
-        return (
-          <span className="stamp-badge bg-[#DCFCE7] text-emerald-950">
-            <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-800" /> Verified & Solved
-          </span>
-        );
-      default:
-        return (
-          <span className="stamp-badge bg-[#FEF3C7] text-amber-950">
-            <Clock className="w-3 h-3 mr-1 text-amber-800" /> Observation Logged
-          </span>
-        );
-    }
-  };
+  const summary = computeFeedSummary(issues);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-69px)] overflow-hidden bg-[#FBF9F5]">
-      {/* Top Filter & Search Bar */}
-      <div className="bg-[#FDFCF9] border-b-2 border-zinc-900 px-4 lg:px-8 py-3 shrink-0">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* Soft Pastel Category Chips */}
-          <div className="flex items-center space-x-2 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
+    <div className="flex flex-col h-[calc(100vh-61px)] lg:h-[calc(100vh-65px)] overflow-hidden bg-[#FBF9F5] relative">
+      {/* Top Refined Filter & Search Bar */}
+      <div className="bg-white border-b border-zinc-200 px-3 sm:px-6 py-2 shrink-0 z-10">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          {/* Category Filter Pills */}
+          <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 sm:pb-0 no-scrollbar touch-pan-x">
             {CATEGORIES.map((cat) => {
               const Icon = cat.icon;
               const isSelected = selectedCategory === cat.id;
@@ -154,152 +126,237 @@ export default function HomePage() {
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`editorial-btn flex items-center space-x-1.5 px-3 py-1.5 text-xs whitespace-nowrap ${
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition-all ${
                     isSelected
-                      ? `${cat.bg} ${cat.text} shadow-[3px_3px_0px_0px_#18181b]`
-                      : 'bg-white text-zinc-700 hover:bg-[#F5F1EA]'
+                      ? 'bg-zinc-900 text-white shadow-sm ring-1 ring-zinc-800'
+                      : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
                   }`}
                 >
-                  <Icon className="w-3.5 h-3.5" />
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
                   <span>{cat.label}</span>
                 </button>
               );
             })}
           </div>
 
-          {/* Real-time Indicator & DIGIPIN Search */}
-          <div className="flex items-center space-x-3">
-            <div className="hidden sm:flex items-center space-x-1.5 stamp-badge bg-[#DCFCE7] text-emerald-950 text-[10px]">
-              <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
-              <span>LIVE SSE STREAM</span>
-            </div>
-
-            <div className="relative min-w-[240px]">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-700" />
-              <input
-                type="text"
-                placeholder="Search DIGIPIN or location..."
-                value={searchDigipin}
-                onChange={(e) => setSearchDigipin(e.target.value)}
-                className="editorial-input w-full pl-9 pr-3 text-xs placeholder-zinc-500"
-              />
-            </div>
+          {/* Search Input with Clear Action */}
+          <div className="relative w-full sm:w-64 shrink-0">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="text"
+              placeholder="Filter by DIGIPIN or text..."
+              value={searchDigipin}
+              onChange={(e) => setSearchDigipin(e.target.value)}
+              className="w-full pl-8 pr-7 py-1.5 text-xs bg-zinc-50 border border-zinc-200 rounded-full focus:outline-none focus:ring-1 focus:ring-zinc-900 focus:bg-white text-zinc-900 placeholder-zinc-400 transition-colors"
+            />
+            {searchDigipin && (
+              <button
+                onClick={() => setSearchDigipin('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700"
+                aria-label="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Main Split Interface */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-0 overflow-hidden">
-        {/* Left Map Frame */}
-        <div className="lg:col-span-7 h-[45vh] lg:h-full relative p-3">
+      {/* Main Workspace: Split-View Dual Panes */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 flex-1 overflow-hidden">
+        {/* Map Pane */}
+        <div
+          className={`h-full relative overflow-hidden bg-zinc-100 ${
+            viewMode === 'map' ? 'block' : 'hidden lg:block'
+          } lg:col-span-7 xl:col-span-8 border-b lg:border-b-0 lg:border-r border-zinc-200`}
+        >
           <MapComponent
             issues={filteredIssues}
             selectedIssue={selectedIssue}
-            onSelectIssue={(issue) => setSelectedIssue(issue)}
+            onSelectIssue={(issue) => {
+              setSelectedIssue(issue);
+            }}
+            className="w-full h-full min-h-[300px] rounded-none border-0 overflow-hidden bg-white relative"
           />
 
-          {/* Floating Public Stats Dateline */}
-          {stats && (
-            <div className="absolute top-6 left-6 z-10 hidden sm:flex items-center space-x-4 px-4 py-2 bg-white border-2 border-zinc-900 rounded-xl shadow-[3px_3px_0px_0px_#18181b] text-xs">
-              <div className="flex items-center space-x-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] border border-zinc-900"></span>
-                <span className="font-bold text-zinc-600">Active Issues:</span>
-                <span className="font-extrabold text-zinc-900 font-mono">{stats.total_issues}</span>
+          {/* Subtle Live Stats Dateline (Desktop) */}
+          <div className="absolute top-4 left-4 z-[400] hidden sm:flex items-center space-x-3 px-3.5 py-2 bg-white/90 backdrop-blur-md border border-zinc-200/80 rounded-xl shadow-sm text-xs pointer-events-auto">
+            <div className="flex items-center space-x-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="font-medium text-zinc-500">Live Active:</span>
+              <span className="font-bold text-zinc-900">{summary.activeCount}</span>
+            </div>
+            <div className="h-3 w-px bg-zinc-200"></div>
+            <div className="flex items-center space-x-1.5">
+              <span className="font-medium text-zinc-500">Verified & Solved:</span>
+              <span className="font-bold text-emerald-700">{summary.resolvedCount}</span>
+            </div>
+          </div>
+
+          {/* Selected Pin Drawer on Mobile */}
+          {selectedIssue && (
+            <div className="lg:hidden absolute bottom-20 left-3 right-3 z-[400] bg-white border-2 border-zinc-900 rounded-xl p-3.5 shadow-[3px_3px_0px_0px_#18181b] animate-in slide-in-from-bottom-2 duration-150">
+              <div className="flex items-start justify-between gap-2 mb-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-mono text-[11px] font-bold bg-zinc-100 text-zinc-900 px-1.5 py-0.5 rounded border border-zinc-300">
+                    {selectedIssue.id}
+                  </span>
+                  <span className="font-mono text-[10px] text-zinc-600 font-semibold">
+                    {formatDigipin(selectedIssue.digipin_code)}
+                  </span>
+                  {(() => {
+                    const pres = getStatusPresentation(selectedIssue.status);
+                    return (
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${pres.badgeClass}`}>
+                        {pres.label}
+                      </span>
+                    );
+                  })()}
+                </div>
+                <button
+                  onClick={() => setSelectedIssue(null)}
+                  className="p-1 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors"
+                  aria-label="Dismiss pin card"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <div className="h-3.5 w-[1.5px] bg-zinc-400"></div>
-              <div className="flex items-center space-x-1.5">
-                <ShieldCheck className="w-4 h-4 text-sky-800" />
-                <span className="font-bold text-zinc-600">Local Verifications:</span>
-                <span className="font-extrabold text-zinc-900 font-mono">{stats.total_local_verifications}</span>
+              <p className="text-xs text-zinc-800 line-clamp-2 mb-3 font-medium leading-relaxed">
+                {selectedIssue.description_neutral}
+              </p>
+              <div className="flex items-center justify-between pt-1 text-xs border-t border-zinc-100">
+                <span className="text-[11px] font-semibold text-emerald-800">
+                  ✓ {selectedIssue.verified_confirm_count} Local Confirms
+                </span>
+                <Link
+                  href={`/issue/${selectedIssue.id}`}
+                  className="editorial-btn px-3 py-1.5 bg-[#FEF3C7] text-amber-950 hover:bg-[#FDE68A] text-xs font-bold inline-flex items-center space-x-1"
+                >
+                  <span>View Details</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
               </div>
             </div>
           )}
         </div>
 
-        {/* Right Community Ledger Drawer */}
-        <div className="lg:col-span-5 h-[55vh] lg:h-full overflow-y-auto p-4 border-t-2 lg:border-t-0 lg:border-l-2 border-zinc-900 bg-[#F7F4EC] flex flex-col space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-black uppercase tracking-wider text-zinc-800 flex items-center space-x-2">
-              <span>Public Civic Ledger</span>
-              <span className="stamp-badge bg-white text-zinc-900">
-                {filteredIssues.length} Recorded
+        {/* Ledger Feed Pane */}
+        <div
+          className={`h-full overflow-y-auto px-4 py-4 space-y-4 ${
+            viewMode === 'ledger' ? 'block' : 'hidden lg:block'
+          } lg:col-span-5 xl:col-span-4 bg-[#FAF8F5]`}
+        >
+          {/* Feed Header */}
+          <div className="flex items-center justify-between sticky top-0 bg-[#FAF8F5]/95 backdrop-blur-sm py-1.5 z-10">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-600 flex items-center space-x-1.5">
+              <Compass className="w-3.5 h-3.5 text-zinc-500" />
+              <span>Community Ledger</span>
+              <span className="font-mono text-[11px] bg-zinc-200 text-zinc-800 px-1.5 py-0.5 rounded">
+                {filteredIssues.length}
               </span>
             </h2>
-            <div className="text-[11px] font-semibold text-zinc-500">Live Real-Time Feed</div>
           </div>
 
           {filteredIssues.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-500 bg-white border-2 border-dashed border-zinc-400 rounded-2xl">
-              <MapPin className="w-10 h-10 mb-2 text-zinc-400 stroke-1" />
-              <p className="text-sm font-bold text-zinc-700">No records found for this view.</p>
-              <p className="text-xs text-zinc-500 mt-1">Be the first to record a verified observation in this area.</p>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-white border-2 border-dashed border-zinc-300 rounded-2xl shadow-sm my-6">
+              <div className="w-12 h-12 rounded-2xl bg-[#FEF3C7] border-2 border-zinc-900 flex items-center justify-center shadow-[2px_2px_0px_0px_#18181b] mb-3">
+                <MapPin className="w-6 h-6 text-zinc-900" />
+              </div>
+              <h3 className="text-sm font-bold text-zinc-900">No Active Civic Hazards</h3>
+              <p className="text-xs text-zinc-500 mt-1 max-w-xs leading-relaxed">
+                {searchDigipin
+                  ? `No records found matching "${searchDigipin}". Clear search to view all.`
+                  : 'The public spatial ledger is currently clear in this category.'}
+              </p>
+              <Link
+                href="/report"
+                className="mt-4 editorial-btn px-4 py-2 bg-[#FEF3C7] text-amber-950 hover:bg-[#FDE68A] text-xs font-bold inline-flex items-center space-x-1.5"
+              >
+                <span>+ Report Observation</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
             </div>
           ) : (
-            <div className="space-y-3.5">
+            <div className="space-y-2.5">
               {filteredIssues.map((issue) => {
                 const isSelected = selectedIssue?.id === issue.id;
+                const pres = getStatusPresentation(issue.status);
+
                 return (
-                  <div
+                  <Link
                     key={issue.id}
-                    onClick={() => setSelectedIssue(issue)}
-                    className={`p-4 rounded-xl border-2 border-zinc-900 transition-all duration-150 cursor-pointer ${
+                    href={`/issue/${issue.id}`}
+                    onClick={(e) => {
+                      setSelectedIssue(issue);
+                    }}
+                    className={`block p-3.5 rounded-xl border transition-all ${
                       isSelected
-                        ? 'bg-white shadow-[5px_5px_0px_0px_#18181b] translate-x-0.5'
-                        : 'bg-[#FDFCF9] hover:bg-white shadow-[3px_3px_0px_0px_#18181b]'
+                        ? 'bg-white border-zinc-900 shadow-sm ring-1 ring-zinc-900'
+                        : 'bg-white hover:bg-zinc-50 border-zinc-200 shadow-sm'
                     }`}
                   >
-                    {/* Header */}
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-mono text-xs font-extrabold text-zinc-900 bg-[#F5F1EA] px-2 py-0.5 rounded border border-zinc-800">
-                            {issue.id}
-                          </span>
-                          <span className="stamp-badge bg-[#E0F2FE] text-sky-950">
-                            {formatDigipin(issue.digipin_code)}
-                          </span>
-                        </div>
-                        <p className="text-[11px] font-semibold text-zinc-600 mt-1">
-                          {issue.jurisdiction_authority}
-                        </p>
+                    {/* Status & Location Meta */}
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <div className="flex items-center space-x-1.5">
+                        <span className="font-mono text-[11px] font-bold text-zinc-900">
+                          {formatDigipin(issue.digipin_code)}
+                        </span>
+                        <span className="text-[10px] font-mono text-zinc-500">
+                          {issue.id}
+                        </span>
                       </div>
-                      {getStatusStamp(issue.status)}
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${pres.badgeClass}`}>
+                        {pres.label}
+                      </span>
                     </div>
 
-                    {/* Factual Statement */}
-                    <p className="text-xs font-medium text-zinc-800 line-clamp-2 leading-relaxed mb-3">
+                    {/* Objective Description */}
+                    <p className="text-xs text-zinc-800 line-clamp-2 leading-relaxed mb-2 font-medium">
                       {issue.description_neutral}
                     </p>
 
-                    {/* Consensus Bar & Link */}
-                    <div className="flex items-center justify-between pt-2.5 border-t border-zinc-200 text-xs">
-                      <div className="flex items-center space-x-3">
-                        <div className="flex items-center space-x-1 font-bold text-emerald-900 bg-[#DCFCE7] px-2 py-0.5 rounded border border-emerald-800 text-[11px]">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-800" />
-                          <span>{issue.verified_confirm_count} Confirms</span>
-                        </div>
+                    {/* Bottom Authority & Verifications */}
+                    <div className="flex items-center justify-between pt-2 border-t border-zinc-100 text-[11px] text-zinc-500">
+                      <span className="truncate max-w-[180px]">
+                        {issue.jurisdiction_authority || 'Local Jurisdiction'}
+                      </span>
+                      <div className="flex items-center space-x-2 shrink-0">
+                        <span className="font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                          ✓ {issue.verified_confirm_count}
+                        </span>
                         {issue.verified_dispute_count > 0 && (
-                          <div className="flex items-center space-x-1 font-bold text-rose-950 bg-[#FFE4E6] px-2 py-0.5 rounded border border-rose-800 text-[11px]">
-                            <AlertTriangle className="w-3 h-3 text-rose-800" />
-                            <span>{issue.verified_dispute_count} Disputes</span>
-                          </div>
+                          <span className="font-semibold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded">
+                            ✕ {issue.verified_dispute_count}
+                          </span>
                         )}
                       </div>
-
-                      <Link
-                        href={`/issue/${issue.id}`}
-                        className="inline-flex items-center space-x-1 font-bold text-xs text-zinc-900 hover:text-sky-900 underline decoration-2 underline-offset-2"
-                      >
-                        <span>View Ledger</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </Link>
                     </div>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
           )}
         </div>
+      </div>
+
+      {/* Single Mobile Floating Switcher (Ergonomic Thumb Reach) */}
+      <div className="lg:hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-[500] pointer-events-auto">
+        <button
+          onClick={() => setViewMode((prev) => (prev === 'map' ? 'ledger' : 'map'))}
+          className="px-4 py-2 bg-zinc-900 text-white font-semibold text-xs flex items-center space-x-2 shadow-lg rounded-full active:scale-95 transition-all"
+        >
+          {viewMode === 'map' ? (
+            <>
+              <List className="w-3.5 h-3.5" />
+              <span>Show Feed ({filteredIssues.length})</span>
+            </>
+          ) : (
+            <>
+              <MapIcon className="w-3.5 h-3.5" />
+              <span>Show Map</span>
+            </>
+          )}
+        </button>
       </div>
     </div>
   );

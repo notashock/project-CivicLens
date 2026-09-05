@@ -57,6 +57,8 @@ class EvidenceMedia(BaseModel):
     phash_value: Optional[str] = None
     detected_objects: List[str] = Field(default_factory=list)
     is_sanitized: bool = True
+    is_verified: bool = False
+    stance: Optional[str] = None  # 'INITIAL_REPORT', 'CONFIRM', 'DISPUTE', 'RESOLUTION_VERIFY', 'RESOLUTION_DISPUTE'
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class Issue(BaseModel):
@@ -89,6 +91,7 @@ class Issue(BaseModel):
     timeline: List[IssueEvent] = Field(default_factory=list)
 
 class IssueCreateRequest(BaseModel):
+    id: Optional[str] = None
     category: IssueCategory
     observed_condition: str
     landmark: str
@@ -107,3 +110,17 @@ class VerificationRequest(BaseModel):
     lat: float
     lon: float
     evidence_photo_base64: Optional[str] = None
+
+class ResolutionClaimRequest(BaseModel):
+    claimant_id: str
+    notes: str
+    proof_photo_base64: Optional[str] = None
+
+class CommunityNoteCreateRequest(BaseModel):
+    participant_badge: Optional[str] = None
+    stance: Optional[str] = "NEUTRAL"  # 'CONFIRM', 'DISPUTE', 'NEUTRAL', 'RESOLUTION_VERIFY', 'RESOLUTION_DISPUTE'
+    nullifier_hash: Optional[str] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    text: str = Field(default="", max_length=2000)
+    media_urls: List[str] = Field(default_factory=list)

@@ -42,12 +42,12 @@ class DatabaseAdapter(abc.ABC):
     """
 
     @abc.abstractmethod
-    def get_by_id(self, issue_id: str) -> Optional[Issue]:
+    async def get_by_id(self, issue_id: str) -> Optional[Issue]:
         """Fetch an issue by its primary ID."""
         pass
 
     @abc.abstractmethod
-    def get_all(
+    async def get_all(
         self,
         category: Optional[Any] = None,
         status: Optional[Any] = None,
@@ -60,11 +60,21 @@ class DatabaseAdapter(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def save(self, issue: Issue) -> Issue:
+    async def save(self, issue: Issue) -> Issue:
         """Persist a newly reported or updated civic issue."""
         pass
 
     @abc.abstractmethod
-    def seed_initial_data(self):
+    async def seed_initial_data(self):
         """Seed initial demo issues."""
+        pass
+
+    @abc.abstractmethod
+    async def get_community_notes(self, issue_id: str) -> List[Dict[str, Any]]:
+        """Fetch all community notes for an issue."""
+        pass
+
+    @abc.abstractmethod
+    async def save_community_note(self, note: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist a new community note."""
         pass

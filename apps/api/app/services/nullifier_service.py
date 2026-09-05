@@ -37,15 +37,22 @@ class NullifierRegistry:
         self._records[key] = NullifierRecord("CONFIRM", time.time())
         return True
 
-    def check_ip_rate_limit(self, ip: str, max_per_minute: int = 30) -> bool:
+    def check_action_rate_limit(self, ip: str, action: str, max_per_minute: int) -> bool:
+        """
+        Tiered sliding-window rate limit per IP per action type.
+        """
         now = time.time()
-        history = self._ip_history.get(ip, [])
+        key = f"{action}:{ip}"
+        history = self._ip_history.get(key, [])
         history = [t for t in history if now - t < 60]
         if len(history) >= max_per_minute:
             return False
         history.append(now)
-        self._ip_history[ip] = history
+        self._ip_history[key] = history
         return True
+
+    def check_ip_rate_limit(self, ip: str, max_per_minute: int = 30) -> bool:
+        return self.check_action_rate_limit(ip, "NOTE", max_per_minute)
 
     def get_stance(self, issue_id: str, nullifier_hash: str) -> Optional[str]:
         key = f"{issue_id}:{nullifier_hash}"

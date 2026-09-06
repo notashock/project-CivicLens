@@ -231,6 +231,29 @@ body {
   padding-top: env(safe-area-inset-top, 16px);
 }
 
+/* Toast Viewport Responsive Clearances:
+   Guarantees exact, mathematically calculated bottom positioning across all mobile layouts
+   without relying on complex Tailwind arbitrary string parsing. */
+.toast-viewport-default {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 4.5rem); /* ~72px: floats ~14px above BottomNav */
+}
+
+.toast-viewport-issue {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 7.75rem); /* ~124px: floats ~12px above Witness Action Dock */
+}
+
+.toast-viewport-report {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 1.25rem); /* ~20px: floats cleanly on report page */
+}
+
+@media (min-width: 1024px) {
+  .toast-viewport-default,
+  .toast-viewport-issue,
+  .toast-viewport-report {
+    bottom: 1.5rem !important; /* 24px on desktop */
+  }
+}
+
 /* Universal Scrollbar Hiding Across Entire Application */
 html,
 body,

@@ -296,26 +296,6 @@ export default function IssueDetailPage() {
       {/* Scrollable Main Issue Content Area (bounds strictly between top navbar and bottom action dock) */}
       <div className="flex-1 min-h-0 overflow-y-auto px-3.5 sm:px-6 py-3 sm:py-5">
         <div className="max-w-3xl mx-auto space-y-3 sm:space-y-4 pb-6">
-          {/* Toast Feedback Notification */}
-          {attestation.actionFeedback && (
-            <div
-              className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-11/12 p-3 rounded-2xl shadow-lg text-xs font-semibold flex items-center space-x-2 border transition-all ${
-                attestation.actionFeedback.type === 'success'
-                  ? 'bg-[#E6F4EA] border-[#CEEAD6] text-[#0D652D]'
-                  : attestation.actionFeedback.type === 'warning'
-                  ? 'bg-[#FEF7E0] border-[#F29900]/40 text-[#7C4300]'
-                  : 'bg-[#FCE8E6] border-[#FAD2CF] text-[#B3261E]'
-              }`}
-            >
-              {attestation.actionFeedback.type === 'success' ? (
-                <Check className="w-4 h-4 shrink-0 text-[#0F9D58]" />
-              ) : (
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-              )}
-              <span className="flex-1">{attestation.actionFeedback.message}</span>
-            </div>
-          )}
-
           {/* Location Permission Blocked Advisory Banner */}
           {attestation.isPermissionDenied && (
             <div className="bg-[#FCE8E6] border border-[#FAD2CF] rounded-2xl p-3 sm:p-3.5 flex items-center justify-between gap-3 text-xs shadow-xs animate-in fade-in">

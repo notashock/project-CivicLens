@@ -3,13 +3,14 @@
 import React, { useState } from 'react';
 import { Wrench, X, User, Building, Camera, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Issue, submitResolutionClaim } from '@/lib/api';
+import { useToast } from '@/context/ToastContext';
 
 interface ResolutionClaimModalProps {
   issue: Issue;
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (updated: Issue) => void;
-  showToast: (message: string, type: 'success' | 'warning' | 'error') => void;
+  showToast?: (message: string, type: 'success' | 'warning' | 'error') => void;
 }
 
 export function ResolutionClaimModal({
@@ -17,8 +18,10 @@ export function ResolutionClaimModal({
   isOpen,
   onClose,
   onSuccess,
-  showToast,
+  showToast: propShowToast,
 }: ResolutionClaimModalProps) {
+  const { showToast: contextShowToast } = useToast();
+  const showToast = propShowToast || contextShowToast;
   const [claimantName, setClaimantName] = useState<string>('');
   const [claimantRole, setClaimantRole] = useState<'CITIZEN' | 'AUTHORITY'>('CITIZEN');
   const [claimNotes, setClaimNotes] = useState<string>('');

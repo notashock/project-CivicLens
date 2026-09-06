@@ -23,6 +23,9 @@ import { encodeDigipin, formatDigipin, deriveIssueId } from '@civictrace/digipin
 import { computeNullifierHash, getOrCreateDevicePrk } from '@civictrace/crypto-nullifier';
 import { sanitizeObservation, sanitizeMedia, validateAndFormatNarrative, checkTextNeutrality } from '@civictrace/sanitization-worker';
 import { submitIssueReport } from '@/lib/api';
+import { acquireUserLocation, GeolocationError, subscribeToPermissionChanges } from '@/lib/location-service';
+import { LocationPermissionModal } from '@/components/LocationPermissionModal';
+import { useActiveIssueDispatch } from '@/context/ActiveIssueContext';
 
 const CATEGORIES = [
   { id: 'ROAD_HAZARD', label: 'Roads & Potholes', icon: '🚧' },
@@ -46,6 +49,19 @@ export default function ReportPage() {
 
   // 3-Step Simple Stepper
   const [activeStep, setActiveStep] = useState<1 | 2 | 3>(1);
+  const { setReportHeader } = useActiveIssueDispatch();
+
+  // Sync active step and header actions with top navbar
+  useEffect(() => {
+    setReportHeader({
+      activeStep,
+      setActiveStep: (step) => setActiveStep(step),
+      submitting: false,
+    });
+    return () => {
+      setReportHeader(null);
+    };
+  }, [activeStep, setReportHeader]);
 
   // Location & DIGIPIN state
   const [lat, setLat] = useState<number>(12.9716);
@@ -53,6 +69,9 @@ export default function ReportPage() {
   const [digipin, setDigipin] = useState<string>('');
   const [digipinError, setDigipinError] = useState<string | null>(null);
   const [locating, setLocating] = useState<boolean>(false);
+  const [isPermissionModalOpen, setIsPermissionModalOpen] = useState<boolean>(false);
+  const [locationPermissionDenied, setLocationPermissionDenied] = useState<boolean>(false);
+  const [locationSuccessNotice, setLocationSuccessNotice] = useState<string | null>(null);
 
   // Form fields
   const [category, setCategory] = useState<string>('ROAD_HAZARD');
@@ -71,8 +90,44 @@ export default function ReportPage() {
   const [validationError, setValidationError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
+  const detectLocation = async (manualClick: boolean = false) => {
+    setLocating(true);
+    setLocationSuccessNotice(null);
+
+    try {
+      const pos = await acquireUserLocation();
+      setLat(pos.latitude);
+      setLon(pos.longitude);
+      setLocating(false);
+      setLocationPermissionDenied(false);
+      setLocationSuccessNotice(pos.isHighAccuracy ? 'GPS locked (High Accuracy)' : 'Location resolved (Network/Coarse)');
+      setTimeout(() => setLocationSuccessNotice(null), 4000);
+    } catch (err: any) {
+      setLocating(false);
+      if (err instanceof GeolocationError && err.isPermissionDenied) {
+        setLocationPermissionDenied(true);
+        if (manualClick) {
+          setIsPermissionModalOpen(true);
+        }
+      } else {
+        console.info('Geolocation unavailable; using default reference.', err);
+      }
+    }
+  };
+
   useEffect(() => {
-    detectLocation();
+    detectLocation(false);
+
+    const unsubscribe = subscribeToPermissionChanges((state) => {
+      if (state === 'granted') {
+        setLocationPermissionDenied(false);
+        detectLocation(false);
+      } else if (state === 'denied') {
+        setLocationPermissionDenied(true);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -113,23 +168,6 @@ export default function ReportPage() {
     }
   }, [condition, landmark, category, durationDays]);
 
-  const detectLocation = () => {
-    if (typeof window !== 'undefined' && navigator.geolocation) {
-      setLocating(true);
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setLat(pos.coords.latitude);
-          setLon(pos.coords.longitude);
-          setLocating(false);
-        },
-        (err) => {
-          console.info('Geolocation unavailable; using default reference.', err);
-          setLocating(false);
-        },
-        { enableHighAccuracy: true, timeout: 5000 }
-      );
-    }
-  };
 
   const updatePreview = async (file: File, preBlur: boolean) => {
     try {
@@ -227,34 +265,12 @@ export default function ReportPage() {
   const progressPercent = activeStep === 1 ? 33 : activeStep === 2 ? 66 : 100;
 
   return (
-    <div className="max-w-3xl mx-auto px-3.5 sm:px-6 py-3 sm:py-8 w-full pb-32 md:pb-12">
-      {/* Top Header Row with Back Navigation & Privacy Stamp */}
-      <div className="mb-3 sm:mb-4 flex items-center justify-between gap-2">
-        <Link
-          href="/"
-          className="inline-flex items-center space-x-1.5 py-1.5 px-3 rounded-full bg-white border border-[#E0E2EC] text-xs font-semibold text-[#5F6368] hover:text-[#1F1F1F] shadow-xs transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Map</span>
-        </Link>
-        <span className="text-[10px] sm:text-[11px] font-semibold text-[#0F9D58] bg-[#E6F4EA] px-2.5 sm:px-3 py-1 rounded-full border border-[#CEEAD6] flex items-center gap-1 shrink-0">
-          <ShieldCheck className="w-3.5 h-3.5" />
-          <span>Anonymous · Zero Sign-in</span>
-        </span>
-      </div>
-
-      {/* Title */}
-      <div className="mb-3 sm:mb-5">
-        <h1 className="text-lg sm:text-2xl font-bold text-[#1F1F1F] tracking-tight">
-          Report a Problem
-        </h1>
-        <p className="text-xs text-[#5F6368] mt-0.5 max-w-xl leading-relaxed">
-          Log an infrastructure hazard. Your identity is never recorded.
-        </p>
-      </div>
-
-      {/* Visual Stepper & Progress Bar */}
-      <div className="mb-4 bg-white p-2 sm:p-3 rounded-2xl border border-[#E0E2EC] shadow-xs">
+    <div className="flex flex-col flex-1 min-h-0 h-full w-full overflow-hidden relative">
+      {/* Scrollable Main Form Container with ample bottom clearance */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-3.5 sm:px-6 py-3 sm:py-5">
+        <div className="max-w-3xl mx-auto space-y-3 sm:space-y-4 pb-28 sm:pb-16">
+          {/* Visual Stepper & Progress Bar */}
+          <div className="bg-white p-2 sm:p-3 rounded-2xl border border-[#E0E2EC] shadow-xs">
         {/* Step Progress Line */}
         <div className="w-full bg-[#F1F3F4] h-1.5 rounded-full overflow-hidden mb-2">
           <div
@@ -344,7 +360,7 @@ export default function ReportPage() {
                 </span>
                 <button
                   type="button"
-                  onClick={detectLocation}
+                  onClick={() => detectLocation(true)}
                   disabled={locating}
                   className="m3-btn-tonal text-[11px] py-1 px-2.5 text-[#041E49] shrink-0"
                 >
@@ -369,6 +385,29 @@ export default function ReportPage() {
                   <span>4m × 4m Postal Grid</span>
                 </span>
               </div>
+
+              {locationSuccessNotice && (
+                <div className="p-2.5 rounded-xl bg-[#E6F4EA] border border-[#CEEAD6] text-[#137333] text-xs font-medium flex items-center space-x-1.5 animate-in fade-in">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-[#0F9D58]" />
+                  <span>{locationSuccessNotice}</span>
+                </div>
+              )}
+
+              {locationPermissionDenied && (
+                <div className="p-3 rounded-xl bg-[#FCE8E6] border border-[#FAD2CF] flex items-center justify-between gap-2 animate-in fade-in">
+                  <div className="flex items-center space-x-2 text-xs text-[#B3261E] font-medium">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-[#D93025]" />
+                    <span>GPS blocked by browser. Using default map center.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsPermissionModalOpen(true)}
+                    className="text-xs font-bold text-[#1A73E8] hover:underline shrink-0 bg-white px-2.5 py-1 rounded-lg border border-[#D3E3FD] shadow-xs cursor-pointer"
+                  >
+                    Unblock GPS
+                  </button>
+                </div>
+              )}
 
               {digipinError && (
                 <div className="p-2.5 rounded-xl bg-[#FEF7E0] border border-[#F29900]/30 text-[#B06000] text-xs font-medium">
@@ -618,6 +657,19 @@ export default function ReportPage() {
           </div>
         )}
       </form>
+        </div>
+      </div>
+
+      {/* Geolocation Permission Resolution Modal */}
+      <LocationPermissionModal
+        isOpen={isPermissionModalOpen}
+        onClose={() => setIsPermissionModalOpen(false)}
+        onPermissionGranted={() => {
+          detectLocation(false);
+        }}
+        title="Enable Location for Incident Reporting"
+        reason="CivicTrace uses your physical GPS location to verify the exact 4m × 4m DIGIPIN postal grid of this hazard and prevent falsified reports."
+      />
     </div>
   );
 }

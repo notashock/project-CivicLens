@@ -12,8 +12,8 @@ export const BottomNav: React.FC = () => {
   const { viewMode } = useSearchFilter();
   const currentView = viewMode || searchParams.get('view') || 'map';
 
-  // When displaying an issue, bottom navbar is dynamically replaced with the issue action dock
-  if (pathname.startsWith('/issue/')) {
+  // When displaying an issue or the report creation flow, hide the bottom navigation
+  if (pathname.startsWith('/issue/') || pathname === '/report') {
     return null;
   }
 

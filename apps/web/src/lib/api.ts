@@ -42,6 +42,13 @@ export function getApiBaseUrl(): string {
       }
     }
 
+    // In production or single-port environments (e.g. Render, or standard port 80/443),
+    // route API calls through Next.js rewrite proxy (/api/* -> FastAPI backend) on the same origin.
+    const currentPort = window.location.port;
+    if (!currentPort || currentPort === '80' || currentPort === '443') {
+      return window.location.origin;
+    }
+
     return `${currentProtocol}//${currentHostname}:8000`;
   }
 
@@ -59,44 +66,20 @@ export function getApiBaseUrl(): string {
 
 export const API_BASE_URL = getApiBaseUrl();
 
-export interface TimelineEvent {
-  id: string;
-  event_type: string;
-  created_at: string | number;
-  from_status?: string;
-  to_status?: string;
-  event_payload: Record<string, any>;
-}
+import type {
+  Issue,
+  TimelineEvent,
+  EvidenceMedia,
+  StatusPresentation,
+  ConsensusMetrics,
+} from './issue-feed-model.ts';
+import {
+  normalizeIssue,
+  getLifecycleStage,
+} from './issue-feed-model.ts';
 
-export interface Issue {
-  id: string;
-  category: string;
-  status: string;
-  digipin_code: string;
-  digipin_l8?: string;
-  digipin_l6?: string;
-  lat: number;
-  lon: number;
-  description_neutral: string;
-  severity_score: number;
-  jurisdiction_authority: string;
-  assigned_department: string;
-  verified_confirm_count: number;
-  verified_dispute_count: number;
-  consensus_score: number;
-  first_reported_at: string | number;
-  last_activity_at?: string | number;
-  escalation_deadline?: string | number;
-  evidence_list?: Array<{
-    id: string;
-    media_url: string;
-    is_sanitized?: boolean;
-    is_verified?: boolean;
-    stance?: string;
-    created_at?: string | number;
-  }>;
-  timeline: TimelineEvent[];
-}
+export type { Issue, TimelineEvent, EvidenceMedia, StatusPresentation, ConsensusMetrics };
+export { normalizeIssue, getLifecycleStage };
 
 export interface CommunityNote {
   id: string;
@@ -112,7 +95,6 @@ export interface CommunityNote {
   created_at: string;
 }
 
-
 export async function fetchIssues(category?: string, status?: string): Promise<Issue[]> {
   const params = new URLSearchParams();
   if (category && category !== 'ALL') params.append('category', category);
@@ -122,7 +104,8 @@ export async function fetchIssues(category?: string, status?: string): Promise<I
     cache: 'no-store',
   });
   if (!res.ok) throw new Error('Failed to fetch issues');
-  return res.json();
+  const data = await res.json();
+  return Array.isArray(data) ? data.map(normalizeIssue) : [];
 }
 
 export async function fetchIssueById(id: string): Promise<Issue> {
@@ -130,7 +113,8 @@ export async function fetchIssueById(id: string): Promise<Issue> {
     cache: 'no-store',
   });
   if (!res.ok) throw new Error(`Failed to fetch issue ${id}`);
-  return res.json();
+  const data = await res.json();
+  return normalizeIssue(data);
 }
 
 export async function fetchStats(): Promise<any> {
@@ -151,7 +135,8 @@ export async function submitIssueReport(payload: any): Promise<Issue> {
     const errorData = await res.json().catch(() => ({ detail: 'Failed to submit report' }));
     throw new Error(errorData.detail || 'Failed to submit report');
   }
-  return res.json();
+  const data = await res.json();
+  return normalizeIssue(data);
 }
 
 export async function submitVerification(issueId: string, payload: any): Promise<Issue> {
@@ -164,7 +149,8 @@ export async function submitVerification(issueId: string, payload: any): Promise
     const errorData = await res.json().catch(() => ({ detail: 'Failed to verify issue' }));
     throw new Error(errorData.detail || 'Failed to verify issue');
   }
-  return res.json();
+  const data = await res.json();
+  return normalizeIssue(data);
 }
 
 export async function submitResolutionClaim(issueId: string, payload: { claimant_id: string; notes: string; proof_photo_base64?: string }): Promise<Issue> {
@@ -177,7 +163,8 @@ export async function submitResolutionClaim(issueId: string, payload: { claimant
     const errorData = await res.json().catch(() => ({ detail: 'Failed to submit resolution claim' }));
     throw new Error(errorData.detail || 'Failed to submit resolution claim');
   }
-  return res.json();
+  const data = await res.json();
+  return normalizeIssue(data);
 }
 
 export async function fetchCommunityNotes(issueId: string): Promise<CommunityNote[]> {

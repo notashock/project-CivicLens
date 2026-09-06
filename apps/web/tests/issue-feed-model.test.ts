@@ -5,6 +5,8 @@ import {
   getStatusPresentation,
   calculateConsensus,
   computeFeedSummary,
+  normalizeIssue,
+  getLifecycleStage,
   type FeedIssue,
 } from '../src/lib/issue-feed-model.ts';
 
@@ -129,5 +131,133 @@ test('Behavior 3: computeFeedSummary aggregates statistics cleanly without compo
   assert.equal(summary.resolvedCount, 1);
   assert.equal(summary.escalatedCount, 1);
 });
+
+test('Behavior 4: normalizeIssue unifies domain model, canonicalizes timestamps, and precomputes presentation metrics at the network seam', () => {
+  const rawApiPayload = {
+    id: 'CT-ROAD-999',
+    digipin_code: '39J49282KJ',
+    category: 'ROAD_HAZARD',
+    status: 'COMMUNITY_CORROBORATED',
+    description_neutral: 'Large pothole on highway',
+    verified_confirm_count: 8,
+    verified_dispute_count: 2,
+    consensus_score: 80,
+    created_at: '2026-09-01T12:00:00Z',
+  };
+
+  const issue = normalizeIssue(rawApiPayload);
+
+  // Identity & core domain fields
+  assert.equal(issue.id, 'CT-ROAD-999');
+  assert.equal(issue.category, 'ROAD_HAZARD');
+  assert.equal(issue.status, 'COMMUNITY_CORROBORATED');
+  assert.equal(issue.digipin_code, '39J49282KJ');
+
+  // Timestamps canonicalized
+  assert.equal(issue.first_reported_at, '2026-09-01T12:00:00Z');
+  assert.equal(issue.created_at, '2026-09-01T12:00:00Z');
+
+  // Precomputed Presentation & Metrics at Network Seam
+  assert.ok(issue.statusPresentation);
+  assert.equal(issue.statusPresentation.label, 'Corroborated');
+  assert.equal(issue.statusPresentation.isActionable, true);
+
+  assert.ok(issue.consensus);
+  assert.equal(issue.consensus.totalVotes, 10);
+  assert.equal(issue.consensus.confirmPct, 80);
+  assert.equal(issue.consensus.disputePct, 20);
+
+  // Lifecycle stage precomputed
+  assert.equal(issue.lifecycleStage, 2);
+
+  // Arrays guaranteed safe
+  assert.ok(Array.isArray(issue.evidence_list));
+  assert.ok(Array.isArray(issue.timeline));
+});
+
+test('Behavior 5: getLifecycleStage maps full issue lifecycle progressions', () => {
+  assert.equal(getLifecycleStage('OBSERVATION_LOGGED'), 1);
+  assert.equal(getLifecycleStage('REPORTED'), 1);
+  assert.equal(getLifecycleStage('COMMUNITY_CORROBORATED'), 2);
+  assert.equal(getLifecycleStage('DISPUTED'), 2);
+  assert.equal(getLifecycleStage('ESCALATED'), 3);
+  assert.equal(getLifecycleStage('ACTION_IN_PROGRESS'), 3);
+  assert.equal(getLifecycleStage('AUTHORITY_RESPONSE'), 3);
+  assert.equal(getLifecycleStage('RESOLUTION_CLAIMED'), 4);
+  assert.equal(getLifecycleStage('COMMUNITY_VERIFIED'), 5);
+  assert.equal(getLifecycleStage('RESOLVED'), 5);
+});
+
+test('Behavior 6: filterIssues and filterIssuesByBounds correctly filter by spatial map viewport bounds', () => {
+  const issues: FeedIssue[] = [
+    {
+      id: 'ISSUE-IN-BOUNDS',
+      digipin_code: '39J49282KJ',
+      category: 'ROAD_HAZARD',
+      status: 'REPORTED',
+      description_neutral: 'Pothole inside downtown area',
+      verified_confirm_count: 0,
+      verified_dispute_count: 0,
+      lat: 12.9716, // In bounds
+      lon: 77.5946,
+    },
+    {
+      id: 'ISSUE-OUT-BOUNDS',
+      digipin_code: '99X11111XX',
+      category: 'DRAINAGE_WATER',
+      status: 'REPORTED',
+      description_neutral: 'Waterlogging far away in another district',
+      verified_confirm_count: 0,
+      verified_dispute_count: 0,
+      lat: 13.5000, // Out of bounds north
+      lon: 77.5946,
+    },
+  ];
+
+  const bounds = {
+    north: 13.0000,
+    south: 12.9000,
+    east: 77.7000,
+    west: 77.5000,
+  };
+
+  // 1. Direct bounds filter helper
+  const boundedOnly = filterIssues(issues, {
+    category: 'ALL',
+    search: '',
+    bounds,
+  });
+
+  assert.equal(boundedOnly.length, 1);
+  assert.equal(boundedOnly[0].id, 'ISSUE-IN-BOUNDS');
+
+  // 2. Clear bounds returns all
+  const allIssues = filterIssues(issues, {
+    category: 'ALL',
+    search: '',
+    bounds: null,
+  });
+  assert.equal(allIssues.length, 2);
+
+  // 3. Invalid or out of range coords
+  const invalidIssue = {
+    id: 'INVALID',
+    digipin_code: '',
+    category: 'ROAD_HAZARD',
+    status: 'REPORTED',
+    description_neutral: '',
+    verified_confirm_count: 0,
+    verified_dispute_count: 0,
+    lat: NaN,
+    lon: 77.5946,
+  };
+  const filteredWithNan = filterIssues([invalidIssue], {
+    category: 'ALL',
+    search: '',
+    bounds,
+  });
+  assert.equal(filteredWithNan.length, 0);
+});
+
 
 

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, status, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 
 from .models import (
     Issue,
@@ -65,23 +65,77 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Warning: Database shutdown error: {e}")
 
+is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or os.getenv("RENDER", "").lower() == "true"
+enable_docs = os.getenv("ENABLE_DOCS", "false").lower() in ("true", "1") or not is_prod
+
 app = FastAPI(
     title="CivicTrace API",
     description="Anonymous, community-verified civic accountability platform API with Real-time Event Streaming",
     version="1.1.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/docs" if enable_docs else None,
+    redoc_url=None,
+    openapi_url="/openapi.json" if enable_docs else None,
 )
 
-cors_origins_raw = os.getenv("CORS_ORIGINS", "*")
-cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()] if cors_origins_raw != "*" else ["*"]
+# Strict CORS origin resolution
+cors_origins_raw = os.getenv("CORS_ORIGINS", "")
+if cors_origins_raw and cors_origins_raw.strip() != "*":
+    cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+elif not is_prod:
+    cors_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+else:
+    cors_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+
+render_ext_url = os.getenv("RENDER_EXTERNAL_URL")
+if render_ext_url and render_ext_url not in cors_origins:
+    cors_origins.append(render_ext_url.rstrip("/"))
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=r"^https://.*\.onrender\.com$" if is_prod else None,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS", "HEAD"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+    max_age=600,
 )
+
+MAX_REQUEST_BODY_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", 10 * 1024 * 1024))  # 10MB limit
+
+@app.middleware("http")
+async def security_and_payload_limit_middleware(request: Request, call_next):
+    # 1. Enforce payload size limit before buffering into RAM
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_REQUEST_BODY_SIZE:
+                return JSONResponse(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    content={"detail": f"Payload exceeds maximum allowed size of {MAX_REQUEST_BODY_SIZE // (1024*1024)}MB"}
+                )
+        except ValueError:
+            pass
+
+    response = await call_next(request)
+
+    # 2. Strict Security Headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(self)"
+    if "server" in response.headers:
+        del response.headers["server"]
+
+    return response
 
 @app.get("/health")
 async def health_check():
@@ -223,147 +277,23 @@ async def add_community_note(
     payload: CommunityNoteCreateRequest,
     request: Request = None
 ):
-    issue = await db.get_by_id(issue_id)
-    if not issue:
-        raise HTTPException(status_code=404, detail=f"Issue '{issue_id}' not found")
-
     # 1. IP Burst Rate Limiting (ADR 0014, ADR 0015)
     enforce_rate_limit(request, "NOTE", 30)
 
-    # 2. Validation: Empty check
-    stance = (payload.stance or "NEUTRAL").upper()
-    if not payload.text.strip() and stance == "NEUTRAL" and not payload.media_urls:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Community note must contain text narrative, an attestation stance, or an evidence photo."
-        )
+    # 2. Ingest through deep Intake Module
+    public_note, updated_issue = await intake_service.process_attestation_note(issue_id, payload)
 
-    # 3. Content Moderation: Dual-tier neutrality & image OCR inspection
-    if payload.text and payload.text.strip():
-        is_valid, error_msg = neutrality_filter.validate_submission(
-            text=payload.text,
-            media_list=payload.media_urls
-        )
-        if not is_valid:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
-    elif payload.media_urls:
-        for idx, img_b64 in enumerate(payload.media_urls):
-            img_error = neutrality_filter.validate_image_ocr(img_b64)
-            if img_error:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Evidence photo #{idx + 1}: {img_error}")
-
-    now = datetime.utcnow()
-    now_ms = int(now.timestamp() * 1000)
-
-    # 4. Spatial Proximity Check (<500m of DIGIPIN Centroid) for Consensus Quorum (ADR 0014, ADR 0015)
-    # Evaluated strictly in-memory; raw coordinates are never saved to database records.
-    is_consensus_verified = False
-    if payload.lat is not None and payload.lon is not None:
-        dist_m = haversine_distance_meters(payload.lat, payload.lon, issue.lat, issue.lon)
-        if dist_m <= 500.0:
-            is_consensus_verified = True
-
-    # Semantic badge without random codes or hex numbers
-    raw_badge = payload.participant_badge.strip() if (payload.participant_badge and payload.participant_badge.strip()) else None
-    if raw_badge and re.search(r"\[[0-9a-fA-F]+\]", raw_badge):
-        raw_badge = re.sub(r"\s*\[[0-9a-fA-F]+\]", "", raw_badge).strip() or None
-
-    badge = raw_badge or ("Local Eyewitness" if is_consensus_verified else "Community Contributor")
-
-    # 5. 15-Minute Stance Change Cooldown & Hardware Nullifier Checks (ADR 0014)
-    if payload.nullifier_hash and stance != "NEUTRAL":
-        can_change, remaining_sec = global_nullifier_registry.can_update_stance(
-            issue_id=issue_id,
-            nullifier_hash=payload.nullifier_hash,
-            new_stance=stance,
-            cooldown_seconds=900
-        )
-        if not can_change:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Attestation stance change on cooldown. Next stance update available in {max(1, remaining_sec // 60)} minutes."
-            )
-
-    # 6. Process Consensus Quorum & Evidence Promotion if Physically Verified
-    if is_consensus_verified and stance != "NEUTRAL" and payload.nullifier_hash:
-        prev_stance = global_nullifier_registry.record_action(issue_id, payload.nullifier_hash, stance)
-
-        # If flipping stance, decrement previous tally
-        if prev_stance:
-            if prev_stance in ["CONFIRM", "RESOLUTION_VERIFY"]:
-                issue.verified_confirm_count = max(0, issue.verified_confirm_count - 1)
-            elif prev_stance in ["DISPUTE", "RESOLUTION_DISPUTE"]:
-                issue.verified_dispute_count = max(0, issue.verified_dispute_count - 1)
-
-        action_map = {
-            "CONFIRM": ActionType.CONFIRM,
-            "DISPUTE": ActionType.DISPUTE,
-            "RESOLUTION_VERIFY": ActionType.RESOLUTION_VERIFY,
-            "RESOLUTION_DISPUTE": ActionType.RESOLUTION_DISPUTE
-        }
-        act = action_map.get(stance, ActionType.CONFIRM)
-        issue, state_event = transition_issue_state(
-            issue=issue,
-            action=act,
-            has_photo_evidence=bool(payload.media_urls)
-        )
-        if state_event:
-            issue.timeline.append(state_event)
-
-        # Promote verified witness photo(s) to primary Issue Evidence Gallery
-        if payload.media_urls:
-            for idx, media_url in enumerate(payload.media_urls):
-                promoted_item = EvidenceMedia(
-                    id=f"EVD-PROM-{issue_id}-{now_ms}-{idx}",
-                    issue_id=issue_id,
-                    media_url=media_url,
-                    is_sanitized=True,
-                    is_verified=True,
-                    stance=stance,
-                    created_at=now
-                )
-                issue.evidence_list.append(promoted_item)
-
-        await db.save(issue)
-
-        # Broadcast real-time consensus & evidence update
+    # 3. Real-time event broadcasts
+    if updated_issue:
         await global_event_broadcaster.broadcast("ISSUE_VERIFIED", {
-            "id": issue.id,
-            "status": issue.status.value if hasattr(issue.status, 'value') else issue.status,
-            "consensus_score": issue.consensus_score,
-            "verified_confirm_count": issue.verified_confirm_count,
-            "verified_dispute_count": issue.verified_dispute_count,
-            "evidence_list": [e.model_dump() if hasattr(e, 'model_dump') else e.__dict__ for e in issue.evidence_list]
+            "id": updated_issue.id,
+            "status": updated_issue.status.value if hasattr(updated_issue.status, 'value') else updated_issue.status,
+            "consensus_score": updated_issue.consensus_score,
+            "verified_confirm_count": updated_issue.verified_confirm_count,
+            "verified_dispute_count": updated_issue.verified_dispute_count,
+            "evidence_list": [e.model_dump() if hasattr(e, 'model_dump') else e.__dict__ for e in updated_issue.evidence_list]
         })
 
-    # 7. Save Note record (Strip raw GPS - coordinates are never persisted)
-    note_data = {
-        "id": f"NOTE-{issue_id}-{now_ms}",
-        "issue_id": issue_id,
-        "participant_badge": badge,
-        "stance": stance,
-        "is_consensus_verified": is_consensus_verified,
-        "nullifier_hash": payload.nullifier_hash,
-        "text": payload.text.strip(),
-        "media_urls": payload.media_urls,
-        "created_at": now.isoformat()
-    }
-
-    saved = await db.save_community_note(note_data)
-
-    # Clean public view - nullifier_hash, lat, and lon are completely scrubbed
-    public_note = {
-        "id": saved["id"],
-        "issue_id": saved["issue_id"],
-        "participant_badge": saved["participant_badge"],
-        "stance": saved["stance"],
-        "is_consensus_verified": saved["is_consensus_verified"],
-        "text": saved["text"],
-        "media_urls": saved.get("media_urls") or [],
-        "created_at": saved["created_at"]
-    }
-
-    # Real-time event broadcast to all viewing clients
     await global_event_broadcaster.broadcast("NOTE_ADDED", public_note)
     return public_note
 

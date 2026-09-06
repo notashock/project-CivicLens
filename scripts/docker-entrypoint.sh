@@ -13,7 +13,14 @@ echo "================================================================="
 
 API_PORT="${API_PORT:-8000}"
 WEB_PORT="${PORT:-3000}"
-API_WORKERS="${API_WORKERS:-2}"
+API_WORKERS="${API_WORKERS:-1}"
+
+# Render Free Tier Memory Safeguards (512MB hard limit)
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=192}"
+export MALLOC_ARENA_MAX=2
+export UV_THREADPOOL_SIZE=2
+export PYTHONUNBUFFERED=1
+export NEXT_TELEMETRY_DISABLED=1
 
 # Graceful shutdown handler
 cleanup() {
@@ -38,12 +45,15 @@ cleanup() {
 
 trap cleanup SIGTERM SIGINT SIGHUP
 
-# 1. Start FastAPI Backend in background
-echo "[SUPERVISOR] Starting FastAPI Backend on 0.0.0.0:${API_PORT} (${API_WORKERS} workers)..."
+# 1. Start FastAPI Backend in background (constrained worker & concurrency for 512MB limit)
+echo "[SUPERVISOR] Starting FastAPI Backend on 0.0.0.0:${API_PORT} (${API_WORKERS} worker, max 50 concurrent)..."
 python -m uvicorn apps.api.app.main:app \
     --host 0.0.0.0 \
     --port "$API_PORT" \
-    --workers "$API_WORKERS" &
+    --workers "$API_WORKERS" \
+    --limit-concurrency 50 \
+    --backlog 128 \
+    --timeout-keep-alive 15 &
 API_PID=$!
 
 # Wait for backend readiness before starting web service
@@ -63,9 +73,17 @@ if [ $COUNT -eq $MAX_WAIT ]; then
     echo "[SUPERVISOR WARNING] FastAPI did not report healthy within ${MAX_WAIT}s. Proceeding with frontend launch..."
 fi
 
-# 2. Start Next.js 15 Web Application
-echo "[SUPERVISOR] Starting Next.js Frontend on 0.0.0.0:${WEB_PORT}..."
-npm run start --workspace=@civictrace/web &
+# 2. Start Next.js 15 Web Application (direct process execution to eliminate npm wrapper RAM overhead)
+echo "[SUPERVISOR] Starting Next.js Frontend on 0.0.0.0:${WEB_PORT} (V8 max heap: 192MB)..."
+if [ -f "/app/apps/web/.next/standalone/apps/web/server.js" ]; then
+    PORT="$WEB_PORT" node /app/apps/web/.next/standalone/apps/web/server.js &
+elif [ -f "/app/.next/standalone/apps/web/server.js" ]; then
+    PORT="$WEB_PORT" node /app/.next/standalone/apps/web/server.js &
+elif [ -f "/app/node_modules/.bin/next" ]; then
+    /app/node_modules/.bin/next start /app/apps/web -p "$WEB_PORT" &
+else
+    npm run start --workspace=@civictrace/web &
+fi
 WEB_PID=$!
 
 echo "[SUPERVISOR] Both services active (API PID: $API_PID | Web PID: $WEB_PID)."

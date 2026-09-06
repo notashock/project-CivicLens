@@ -39,15 +39,17 @@ class PostgresDatabaseAdapter(DatabaseAdapter):
         # 1. Ensure target database exists; if not, auto-create via maintenance DB
         await self._ensure_database_exists()
 
-        # 2. Establish connection pool
+        # 2. Establish connection pool (constrained default for Render free tier memory budget)
         try:
+            pool_min = int(os.getenv("DB_POOL_MIN", "1"))
+            pool_max = int(os.getenv("DB_POOL_MAX", "3"))
             self._pool = await asyncpg.create_pool(
                 self.database_url,
-                min_size=1,
-                max_size=10,
+                min_size=pool_min,
+                max_size=pool_max,
                 command_timeout=30
             )
-            logger.info("PostgreSQL connection pool established successfully.")
+            logger.info(f"PostgreSQL connection pool established successfully (min={pool_min}, max={pool_max}).")
         except Exception as e:
             logger.error(f"Failed to create PostgreSQL pool: {e}")
             raise

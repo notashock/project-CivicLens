@@ -69,6 +69,10 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV API_PORT=8000
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_OPTIONS="--max-old-space-size=192"
+ENV MALLOC_ARENA_MAX=2
+ENV UV_THREADPOOL_SIZE=2
+ENV API_WORKERS=1
 
 # Copy built monorepo packages, node_modules, and web bundle
 COPY --from=node-builder /app/package.json /app/package.json

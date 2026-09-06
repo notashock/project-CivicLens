@@ -49,6 +49,13 @@ class NullifierRegistry:
             return False
         history.append(now)
         self._ip_history[key] = history
+
+        # Periodic cleanup: keep dictionary bounded and purge expired IP keys
+        if len(self._ip_history) > 150:
+            expired = [k for k, v in self._ip_history.items() if not v or (now - v[-1] >= 60)]
+            for k in expired:
+                self._ip_history.pop(k, None)
+
         return True
 
     def check_ip_rate_limit(self, ip: str, max_per_minute: int = 30) -> bool:

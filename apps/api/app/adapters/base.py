@@ -6,12 +6,19 @@ from apps.api.app.models import Issue, VerificationRequest
 class EventBroadcaster:
     """
     In-memory async broadcast hub for real-time pub/sub across connected WebSockets and SSE streams.
+    Enforces maximum subscriber thresholds and low-latency bounded queue sizes for free-tier memory safety.
     """
-    def __init__(self):
+    def __init__(self, max_subscribers: int = 100, queue_maxsize: int = 20):
         self._subscribers: List[asyncio.Queue] = []
+        self._max_subscribers = max_subscribers
+        self._queue_maxsize = queue_maxsize
 
     def subscribe(self) -> asyncio.Queue:
-        queue = asyncio.Queue(maxsize=100)
+        # If subscriber cap reached, drop oldest idle queue to prevent unbounded memory growth
+        if len(self._subscribers) >= self._max_subscribers:
+            oldest = self._subscribers.pop(0)
+            del oldest
+        queue = asyncio.Queue(maxsize=self._queue_maxsize)
         self._subscribers.append(queue)
         return queue
 

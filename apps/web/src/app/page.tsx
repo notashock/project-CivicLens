@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   AlertTriangle,
   Droplets,
@@ -11,41 +12,30 @@ import {
   CheckCircle2,
   Clock,
   MapPin,
-  Search,
-  Filter,
   ShieldCheck,
   ArrowRight,
-  Map as MapIcon,
-  List,
   Compass,
-  X
+  X,
+  Check,
 } from 'lucide-react';
-import { fetchIssues, fetchStats, subscribeToRealtimeEvents, Issue } from '@/lib/api';
+import { fetchIssues, fetchStats, subscribeToRealtimeEvents, Issue, normalizeIssue } from '@/lib/api';
 import { MapComponent } from '@/components/MapComponent';
 import { formatDigipin } from '@civictrace/digipin';
 import {
   filterIssues,
-  getStatusPresentation,
   computeFeedSummary,
+  ISSUE_CATEGORIES,
+  MapBoundingBox,
 } from '@/lib/issue-feed-model';
+import { useSearchFilter } from '@/context/SearchFilterContext';
 
-const CATEGORIES = [
-  { id: 'ALL', label: 'All Hazards', icon: Filter },
-  { id: 'ROAD_HAZARD', label: 'Roads & Potholes', icon: AlertTriangle },
-  { id: 'DRAINAGE_WATER', label: 'Water & Drainage', icon: Droplets },
-  { id: 'SOLID_WASTE', label: 'Solid Waste', icon: Trash2 },
-  { id: 'ELECTRICAL_HAZARD', label: 'Electrical', icon: Zap },
-  { id: 'PUBLIC_INFRASTRUCTURE', label: 'Public Amenities', icon: Building2 },
-];
-
-export default function HomePage() {
+function HomeContent() {
+  const { search, category, viewMode } = useSearchFilter();
   const [issues, setIssues] = useState<Issue[]>([]);
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [searchDigipin, setSearchDigipin] = useState('');
+  const [activeBounds, setActiveBounds] = useState<MapBoundingBox | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'map' | 'ledger'>('map');
 
   useEffect(() => {
     loadData();
@@ -53,25 +43,24 @@ export default function HomePage() {
     // Subscribe to live Real-time SSE event stream
     const unsubscribe = subscribeToRealtimeEvents((eventType, data) => {
       if (eventType === 'ISSUE_CREATED') {
+        const normalized = normalizeIssue(data);
         setIssues((prev) => {
-          if (prev.some((i) => i.id === data.id)) return prev;
-          return [data, ...prev];
+          if (prev.some((i) => i.id === normalized.id)) return prev;
+          return [normalized, ...prev];
         });
-        setStats((prev: any) => prev ? {
-          ...prev,
-          total_issues: (prev.total_issues || 0) + 1
-        } : prev);
+        setStats((prev: any) =>
+          prev
+            ? {
+                ...prev,
+                total_issues: (prev.total_issues || 0) + 1,
+              }
+            : prev
+        );
       } else if (eventType === 'ISSUE_VERIFIED') {
         setIssues((prev) =>
           prev.map((item) =>
             item.id === data.id
-              ? {
-                  ...item,
-                  status: data.status,
-                  consensus_score: data.consensus_score,
-                  verified_confirm_count: data.verified_confirm_count,
-                  verified_dispute_count: data.verified_dispute_count,
-                }
+              ? normalizeIssue({ ...item, ...data })
               : item
           )
         );
@@ -81,13 +70,13 @@ export default function HomePage() {
     return () => {
       unsubscribe();
     };
-  }, [selectedCategory]);
+  }, [category]);
 
   const loadData = async () => {
     try {
       setLoading(true);
       const [issuesData, statsData] = await Promise.all([
-        fetchIssues(selectedCategory, 'ALL'),
+        fetchIssues(category, 'ALL'),
         fetchStats(),
       ]);
       setIssues(issuesData);
@@ -104,133 +93,98 @@ export default function HomePage() {
     }
   };
 
-  // Pure filtering through tested deep module
-  const filteredIssues = filterIssues(issues, {
-    category: selectedCategory,
-    search: searchDigipin,
+  // Base filtered by search & category for map rendering
+  const categoryIssues = filterIssues(issues, {
+    category,
+    search,
   });
 
-  const summary = computeFeedSummary(issues);
+  // Scoped to visible map bounds if activeBounds is set
+  const filteredIssues = filterIssues(issues, {
+    category,
+    search,
+    bounds: activeBounds,
+  });
+
+  const summary = computeFeedSummary(filteredIssues);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-61px)] lg:h-[calc(100vh-65px)] overflow-hidden bg-[#FBF9F5] relative">
-      {/* Top Refined Filter & Search Bar */}
-      <div className="bg-white border-b border-zinc-200 px-3 sm:px-6 py-2 shrink-0 z-10">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-          {/* Category Filter Pills */}
-          <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 sm:pb-0 no-scrollbar touch-pan-x">
-            {CATEGORIES.map((cat) => {
-              const Icon = cat.icon;
-              const isSelected = selectedCategory === cat.id;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition-all ${
-                    isSelected
-                      ? 'bg-zinc-900 text-white shadow-sm ring-1 ring-zinc-800'
-                      : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5 shrink-0" />
-                  <span>{cat.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Search Input with Clear Action */}
-          <div className="relative w-full sm:w-64 shrink-0">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-            <input
-              type="text"
-              placeholder="Filter by DIGIPIN or text..."
-              value={searchDigipin}
-              onChange={(e) => setSearchDigipin(e.target.value)}
-              className="w-full pl-8 pr-7 py-1.5 text-xs bg-zinc-50 border border-zinc-200 rounded-full focus:outline-none focus:ring-1 focus:ring-zinc-900 focus:bg-white text-zinc-900 placeholder-zinc-400 transition-colors"
-            />
-            {searchDigipin && (
-              <button
-                onClick={() => setSearchDigipin('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700"
-                aria-label="Clear search"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Main Workspace: Split-View Dual Panes */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 flex-1 overflow-hidden">
-        {/* Map Pane */}
+    <div className="flex flex-col flex-1 min-h-0 h-full w-full overflow-hidden bg-[#F8F9FA] relative">
+      {/* Main Responsive Split-View Workspace */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 flex-1 min-h-0 overflow-hidden relative">
+        {/* Left Map Pane (7 of 12 columns on desktop) */}
         <div
-          className={`h-full relative overflow-hidden bg-zinc-100 ${
+          className={`h-full relative overflow-hidden bg-[#F1F3F4] ${
             viewMode === 'map' ? 'block' : 'hidden lg:block'
-          } lg:col-span-7 xl:col-span-8 border-b lg:border-b-0 lg:border-r border-zinc-200`}
+          } lg:col-span-7 xl:col-span-8 border-b lg:border-b-0 lg:border-r border-[#E0E2EC]`}
         >
           <MapComponent
-            issues={filteredIssues}
+            issues={categoryIssues}
             selectedIssue={selectedIssue}
             onSelectIssue={(issue) => {
               setSelectedIssue(issue);
             }}
+            activeBounds={activeBounds}
+            onSearchArea={(bounds) => {
+              setActiveBounds(bounds);
+            }}
+            onResetArea={() => {
+              setActiveBounds(null);
+            }}
+            onLocateUser={(lat, lon, bounds) => {
+              setActiveBounds(bounds);
+            }}
+            loading={loading}
             className="w-full h-full min-h-[300px] rounded-none border-0 overflow-hidden bg-white relative"
           />
 
-          {/* Subtle Live Stats Dateline (Desktop) */}
-          <div className="absolute top-4 left-4 z-[400] hidden sm:flex items-center space-x-3 px-3.5 py-2 bg-white/90 backdrop-blur-md border border-zinc-200/80 rounded-xl shadow-sm text-xs pointer-events-auto">
-            <div className="flex items-center space-x-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="font-medium text-zinc-500">Live Active:</span>
-              <span className="font-bold text-zinc-900">{summary.activeCount}</span>
+          {/* M3 Floating Live Dateline Chip (Desktop) */}
+          <div className="absolute top-4 left-4 z-[400] hidden sm:flex items-center space-x-3 px-4 py-2 bg-white/95 backdrop-blur-md border border-[#E0E2EC] rounded-full shadow-m3-elevation-1 text-xs pointer-events-auto">
+            <div className="flex items-center space-x-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#0F9D58] animate-pulse"></span>
+              <span className="font-medium text-[#5F6368]">Active:</span>
+              <span className="font-bold text-[#1F1F1F]">{summary.activeCount}</span>
             </div>
-            <div className="h-3 w-px bg-zinc-200"></div>
-            <div className="flex items-center space-x-1.5">
-              <span className="font-medium text-zinc-500">Verified & Solved:</span>
-              <span className="font-bold text-emerald-700">{summary.resolvedCount}</span>
+            <div className="h-3.5 w-px bg-[#E0E2EC]"></div>
+            <div className="flex items-center space-x-2">
+              <span className="font-medium text-[#5F6368]">Fixed:</span>
+              <span className="font-bold text-[#0F9D58]">{summary.resolvedCount}</span>
             </div>
           </div>
 
-          {/* Selected Pin Drawer on Mobile */}
+          {/* M3 Modal Bottom Sheet for Pin Preview on Mobile */}
           {selectedIssue && (
-            <div className="lg:hidden absolute bottom-20 left-3 right-3 z-[400] bg-white border-2 border-zinc-900 rounded-xl p-3.5 shadow-[3px_3px_0px_0px_#18181b] animate-in slide-in-from-bottom-2 duration-150">
-              <div className="flex items-start justify-between gap-2 mb-1.5">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="font-mono text-[11px] font-bold bg-zinc-100 text-zinc-900 px-1.5 py-0.5 rounded border border-zinc-300">
-                    {selectedIssue.id}
-                  </span>
-                  <span className="font-mono text-[10px] text-zinc-600 font-semibold">
+            <div className="lg:hidden absolute bottom-4 left-3 right-3 z-[450] bg-white rounded-3xl p-4 shadow-m3-elevation-3 border border-[#E0E2EC] animate-in slide-in-from-bottom-3 duration-200">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-xs font-bold bg-[#E8F0FE] text-[#041E49] px-2.5 py-0.5 rounded-full border border-[#D3E3FD]">
                     {formatDigipin(selectedIssue.digipin_code)}
                   </span>
-                  {(() => {
-                    const pres = getStatusPresentation(selectedIssue.status);
-                    return (
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${pres.badgeClass}`}>
-                        {pres.label}
-                      </span>
-                    );
-                  })()}
+                  <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border ${selectedIssue.statusPresentation.badgeClass}`}>
+                    {selectedIssue.statusPresentation.label}
+                  </span>
                 </div>
                 <button
                   onClick={() => setSelectedIssue(null)}
-                  className="p-1 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors"
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-[#5F6368] hover:bg-[#F1F3F4] transition-colors"
                   aria-label="Dismiss pin card"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <p className="text-xs text-zinc-800 line-clamp-2 mb-3 font-medium leading-relaxed">
+
+              <p className="text-xs text-[#1F1F1F] line-clamp-2 mb-3 font-normal leading-relaxed">
                 {selectedIssue.description_neutral}
               </p>
-              <div className="flex items-center justify-between pt-1 text-xs border-t border-zinc-100">
-                <span className="text-[11px] font-semibold text-emerald-800">
-                  ✓ {selectedIssue.verified_confirm_count} Local Confirms
+
+              <div className="flex items-center justify-between pt-2 border-t border-[#E0E2EC] text-xs">
+                <span className="text-[11px] font-semibold text-[#0F9D58] flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{selectedIssue.verified_confirm_count} Confirmed</span>
                 </span>
                 <Link
                   href={`/issue/${selectedIssue.id}`}
-                  className="editorial-btn px-3 py-1.5 bg-[#FEF3C7] text-amber-950 hover:bg-[#FDE68A] text-xs font-bold inline-flex items-center space-x-1"
+                  className="m3-btn-primary text-xs py-1.5 px-4 font-semibold"
                 >
                   <span>View Details</span>
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -240,39 +194,79 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* Ledger Feed Pane */}
+        {/* Right Ledger Feed Pane (5 of 12 columns on desktop) */}
         <div
-          className={`h-full overflow-y-auto px-4 py-4 space-y-4 ${
-            viewMode === 'ledger' ? 'block' : 'hidden lg:block'
-          } lg:col-span-5 xl:col-span-4 bg-[#FAF8F5]`}
+          className={`h-full flex flex-col min-h-0 ${
+            viewMode === 'ledger' ? 'flex' : 'hidden lg:flex'
+          } lg:col-span-5 xl:col-span-4 bg-[#F8F9FA]`}
         >
-          {/* Feed Header */}
-          <div className="flex items-center justify-between sticky top-0 bg-[#FAF8F5]/95 backdrop-blur-sm py-1.5 z-10">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-600 flex items-center space-x-1.5">
-              <Compass className="w-3.5 h-3.5 text-zinc-500" />
-              <span>Community Ledger</span>
-              <span className="font-mono text-[11px] bg-zinc-200 text-zinc-800 px-1.5 py-0.5 rounded">
+          {/* Feed Header - Sticking flush below the top navbar with zero gap */}
+          <div className="shrink-0 px-3.5 sm:px-4 py-2.5 bg-[#F8F9FA] border-b border-[#E0E2EC] flex items-center justify-between z-10">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-[#5F6368] flex items-center space-x-2">
+              <Compass className="w-4 h-4 text-[#1A73E8]" />
+              <span>Community Reports</span>
+              <span className="font-mono text-[11px] bg-[#E8F0FE] text-[#041E49] px-2 py-0.5 rounded-full font-semibold">
                 {filteredIssues.length}
               </span>
             </h2>
+
+            {/* Map Area Filter Active Pill & Reset */}
+            {activeBounds && (
+              <div className="flex items-center space-x-1.5 text-[11px] font-semibold text-[#1A73E8] bg-[#E8F0FE] px-2.5 py-0.5 rounded-full border border-[#D3E3FD] animate-in fade-in">
+                <span>In Map View</span>
+                <button
+                  type="button"
+                  onClick={() => setActiveBounds(null)}
+                  className="text-[#5F6368] hover:text-[#1F1F1F] p-0.5 rounded-full hover:bg-white/50 transition-colors"
+                  title="Show all reports city-wide"
+                  aria-label="Reset map bounds filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
           </div>
 
-          {filteredIssues.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-white border-2 border-dashed border-zinc-300 rounded-2xl shadow-sm my-6">
-              <div className="w-12 h-12 rounded-2xl bg-[#FEF3C7] border-2 border-zinc-900 flex items-center justify-center shadow-[2px_2px_0px_0px_#18181b] mb-3">
-                <MapPin className="w-6 h-6 text-zinc-900" />
+          {/* Scrollable Feed List Container */}
+          <div className="flex-1 min-h-0 overflow-y-auto px-3.5 sm:px-4 py-3 space-y-2.5 pb-24">
+            {loading ? (
+              <div className="space-y-3 animate-pulse" aria-label="Loading reports...">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="p-3.5 sm:p-4 rounded-2xl border border-[#E0E2EC] bg-white space-y-3 shadow-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <div className="h-5 w-24 bg-[#E0E2EC] rounded-full" />
+                        <div className="h-5 w-16 bg-[#E0E2EC] rounded-full" />
+                      </div>
+                      <div className="h-3.5 w-14 bg-[#E0E2EC] rounded" />
+                    </div>
+                    <div className="space-y-1.5 pt-0.5">
+                      <div className="h-4 w-full bg-[#E0E2EC] rounded" />
+                      <div className="h-4 w-4/5 bg-[#E0E2EC] rounded" />
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-[#F1F3F4]">
+                      <div className="h-3.5 w-24 bg-[#E0E2EC] rounded" />
+                      <div className="h-5 w-20 bg-[#E0E2EC] rounded-full" />
+                    </div>
+                  </div>
+                ))}
               </div>
-              <h3 className="text-sm font-bold text-zinc-900">No Active Civic Hazards</h3>
-              <p className="text-xs text-zinc-500 mt-1 max-w-xs leading-relaxed">
-                {searchDigipin
-                  ? `No records found matching "${searchDigipin}". Clear search to view all.`
-                  : 'The public spatial ledger is currently clear in this category.'}
+            ) : filteredIssues.length === 0 ? (
+              <div className="flex flex-col items-center justify-center p-8 text-center bg-white border border-[#E0E2EC] rounded-2xl shadow-sm my-6">
+              <div className="w-12 h-12 rounded-full bg-[#E8F0FE] text-[#1A73E8] flex items-center justify-center mb-3">
+                <MapPin className="w-6 h-6 text-[#1A73E8]" />
+              </div>
+              <h3 className="text-sm font-bold text-[#1F1F1F]">No Reports Found</h3>
+              <p className="text-xs text-[#5F6368] mt-1 max-w-xs leading-relaxed">
+                {search
+                  ? `No reports found matching "${search}". Clear your search to view all.`
+                  : 'No issues currently reported in this category.'}
               </p>
               <Link
                 href="/report"
-                className="mt-4 editorial-btn px-4 py-2 bg-[#FEF3C7] text-amber-950 hover:bg-[#FDE68A] text-xs font-bold inline-flex items-center space-x-1.5"
+                className="mt-4 m3-btn-tonal text-xs px-4 py-2 font-semibold"
               >
-                <span>+ Report Observation</span>
+                <span>Report an Issue</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>
@@ -280,52 +274,46 @@ export default function HomePage() {
             <div className="space-y-2.5">
               {filteredIssues.map((issue) => {
                 const isSelected = selectedIssue?.id === issue.id;
-                const pres = getStatusPresentation(issue.status);
+                const pres = issue.statusPresentation;
 
                 return (
                   <Link
                     key={issue.id}
                     href={`/issue/${issue.id}`}
-                    onClick={(e) => {
-                      setSelectedIssue(issue);
-                    }}
-                    className={`block p-3.5 rounded-xl border transition-all ${
+                    onClick={() => setSelectedIssue(issue)}
+                    className={`block p-3.5 sm:p-4 rounded-2xl border transition-all ${
                       isSelected
-                        ? 'bg-white border-zinc-900 shadow-sm ring-1 ring-zinc-900'
-                        : 'bg-white hover:bg-zinc-50 border-zinc-200 shadow-sm'
+                        ? 'bg-white border-[#1A73E8] shadow-m3-elevation-2 ring-1 ring-[#1A73E8]'
+                        : 'bg-white hover:bg-[#FAFAFA] border-[#E0E2EC] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.04)] hover:shadow-md'
                     }`}
                   >
-                    {/* Status & Location Meta */}
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <div className="flex items-center space-x-1.5">
-                        <span className="font-mono text-[11px] font-bold text-zinc-900">
-                          {formatDigipin(issue.digipin_code)}
-                        </span>
-                        <span className="text-[10px] font-mono text-zinc-500">
-                          {issue.id}
-                        </span>
-                      </div>
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${pres.badgeClass}`}>
+                    {/* Status & DIGIPIN Header */}
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="font-mono text-xs font-bold text-[#1F1F1F] bg-[#F1F3F4] px-2 py-0.5 rounded-md">
+                        {formatDigipin(issue.digipin_code)}
+                      </span>
+                      <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border ${pres.badgeClass}`}>
                         {pres.label}
                       </span>
                     </div>
 
-                    {/* Objective Description */}
-                    <p className="text-xs text-zinc-800 line-clamp-2 leading-relaxed mb-2 font-medium">
+                    {/* Factual Narrative */}
+                    <p className="text-xs text-[#1F1F1F] line-clamp-2 leading-relaxed mb-2.5 font-normal">
                       {issue.description_neutral}
                     </p>
 
-                    {/* Bottom Authority & Verifications */}
-                    <div className="flex items-center justify-between pt-2 border-t border-zinc-100 text-[11px] text-zinc-500">
-                      <span className="truncate max-w-[180px]">
+                    {/* Bottom Metadata & Quorum Stats */}
+                    <div className="flex items-center justify-between pt-2 border-t border-[#F1F3F4] text-[11px] text-[#5F6368]">
+                      <span className="truncate max-w-[160px] font-medium">
                         {issue.jurisdiction_authority || 'Local Jurisdiction'}
                       </span>
-                      <div className="flex items-center space-x-2 shrink-0">
-                        <span className="font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
-                          ✓ {issue.verified_confirm_count}
+                      <div className="flex items-center space-x-1.5 shrink-0">
+                        <span className="font-semibold text-[#0F9D58] bg-[#E6F4EA] px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          <span>{issue.verified_confirm_count}</span>
                         </span>
                         {issue.verified_dispute_count > 0 && (
-                          <span className="font-semibold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded">
+                          <span className="font-semibold text-[#D93025] bg-[#FCE8E6] px-2 py-0.5 rounded-full">
                             ✕ {issue.verified_dispute_count}
                           </span>
                         )}
@@ -336,28 +324,37 @@ export default function HomePage() {
               })}
             </div>
           )}
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Single Mobile Floating Switcher (Ergonomic Thumb Reach) */}
-      <div className="lg:hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-[500] pointer-events-auto">
-        <button
-          onClick={() => setViewMode((prev) => (prev === 'map' ? 'ledger' : 'map'))}
-          className="px-4 py-2 bg-zinc-900 text-white font-semibold text-xs flex items-center space-x-2 shadow-lg rounded-full active:scale-95 transition-all"
-        >
-          {viewMode === 'map' ? (
-            <>
-              <List className="w-3.5 h-3.5" />
-              <span>Show Feed ({filteredIssues.length})</span>
-            </>
-          ) : (
-            <>
-              <MapIcon className="w-3.5 h-3.5" />
-              <span>Show Map</span>
-            </>
-          )}
-        </button>
+function HomeSkeleton() {
+  return (
+    <div className="flex flex-col flex-1 min-h-0 h-full w-full overflow-hidden bg-[#F8F9FA] animate-pulse">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 flex-1 min-h-0 overflow-hidden">
+        <div className="hidden lg:block lg:col-span-7 xl:col-span-8 bg-[#EAECEF] relative" />
+        <div className="col-span-12 lg:col-span-5 xl:col-span-4 flex flex-col p-4 space-y-3 bg-[#F8F9FA]">
+          <div className="h-8 w-44 bg-[#E0E2EC] rounded-full mb-2" />
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="p-4 rounded-2xl bg-white border border-[#E0E2EC] space-y-3">
+              <div className="h-5 w-28 bg-[#E0E2EC] rounded-full" />
+              <div className="h-4 w-full bg-[#E0E2EC] rounded" />
+              <div className="h-4 w-3/4 bg-[#E0E2EC] rounded" />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={<HomeSkeleton />}>
+      <HomeContent />
+    </Suspense>
   );
 }

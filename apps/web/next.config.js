@@ -8,6 +8,9 @@ const nextConfig = {
     '@civictrace/crypto-nullifier',
     '@civictrace/sanitization-worker'
   ],
+  output: 'standalone',
+  poweredByHeader: false,
+  outputFileTracingRoot: path.join(__dirname, '../../'),
   webpack: (config) => {
     config.resolve.alias['@civictrace/digipin'] = path.resolve(__dirname, '../../packages/digipin/src/index.ts');
     config.resolve.alias['@civictrace/crypto-nullifier'] = path.resolve(__dirname, '../../packages/crypto-nullifier/src/index.ts');

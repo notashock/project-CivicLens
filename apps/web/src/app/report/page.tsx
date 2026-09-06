@@ -4,38 +4,50 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ShieldCheck,
   Camera,
   MapPin,
   CheckCircle2,
   AlertTriangle,
   ArrowRight,
   EyeOff,
-  Lock,
   ArrowLeft,
   Navigation,
   RefreshCw,
-  FileCheck
+  Check,
+  ChevronRight,
+  ShieldCheck,
+  Clock,
+  Sparkles
 } from 'lucide-react';
 import { encodeDigipin, formatDigipin, deriveIssueId } from '@civictrace/digipin';
 import { computeNullifierHash, getOrCreateDevicePrk } from '@civictrace/crypto-nullifier';
-import { sanitizeObservation, sanitizeMedia, validateAndFormatNarrative } from '@civictrace/sanitization-worker';
+import { sanitizeObservation, sanitizeMedia, validateAndFormatNarrative, checkTextNeutrality } from '@civictrace/sanitization-worker';
 import { submitIssueReport } from '@/lib/api';
-import { checkTextNeutrality } from '@/lib/neutrality-checker';
 
 const CATEGORIES = [
   { id: 'ROAD_HAZARD', label: 'Roads & Potholes', icon: '🚧' },
-  { id: 'DRAINAGE_WATER', label: 'Water / Sewage', icon: '💧' },
-  { id: 'SOLID_WASTE', label: 'Solid Waste Dump', icon: '🗑️' },
-  { id: 'ELECTRICAL_HAZARD', label: 'Electrical Danger', icon: '⚡' },
-  { id: 'PUBLIC_INFRASTRUCTURE', label: 'Damaged Structure', icon: '🏛️' },
-  { id: 'ENVIRONMENTAL_VIOLATION', label: 'Environmental Hazard', icon: '🌿' },
+  { id: 'DRAINAGE_WATER', label: 'Water & Sewage', icon: '💧' },
+  { id: 'SOLID_WASTE', label: 'Garbage & Waste', icon: '🗑️' },
+  { id: 'ELECTRICAL_HAZARD', label: 'Electricity Hazard', icon: '⚡' },
+  { id: 'PUBLIC_INFRASTRUCTURE', label: 'Damaged Amenities', icon: '🏛️' },
+  { id: 'ENVIRONMENTAL_VIOLATION', label: 'Pollution / Trees', icon: '🌿' },
+];
+
+const DURATION_PRESETS = [
+  { label: 'Today', days: 1 },
+  { label: '3 Days', days: 3 },
+  { label: '1 Week', days: 7 },
+  { label: '2+ Weeks', days: 14 },
+  { label: '1+ Month', days: 30 },
 ];
 
 export default function ReportPage() {
   const router = useRouter();
 
-  // Location state
+  // 3-Step Simple Stepper
+  const [activeStep, setActiveStep] = useState<1 | 2 | 3>(1);
+
+  // Location & DIGIPIN state
   const [lat, setLat] = useState<number>(12.9716);
   const [lon, setLon] = useState<number>(77.5946);
   const [digipin, setDigipin] = useState<string>('');
@@ -55,7 +67,7 @@ export default function ReportPage() {
   const [isPreBlurred, setIsPreBlurred] = useState<boolean>(true);
   const [processingMedia, setProcessingMedia] = useState<boolean>(false);
 
-  // Real-time validation & Submission
+  // Validation & Submission
   const [validationError, setValidationError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
@@ -63,7 +75,6 @@ export default function ReportPage() {
     detectLocation();
   }, []);
 
-  // Robust DIGIPIN encoding with boundary safety
   useEffect(() => {
     try {
       const code = encodeDigipin(lat, lon, 10);
@@ -71,13 +82,12 @@ export default function ReportPage() {
       setDigipinError(null);
     } catch (e: any) {
       console.warn('Coordinates outside India DIGIPIN bounds:', e);
-      setDigipinError('Detected coordinates are outside the national DIGIPIN grid. Resetting to default regional reference.');
+      setDigipinError('Could not resolve location code. Using default city reference.');
       setLat(12.9716);
       setLon(77.5946);
     }
   }, [lat, lon]);
 
-  // Live text neutrality validation
   useEffect(() => {
     if (!condition && !landmark) {
       setValidationError(null);
@@ -86,7 +96,7 @@ export default function ReportPage() {
 
     const neutralityCheck = checkTextNeutrality(`${condition} ${landmark}`);
     if (!neutralityCheck.isValid) {
-      setValidationError(neutralityCheck.warning || 'Neutrality violation detected.');
+      setValidationError(neutralityCheck.warning || 'Please describe the problem factually without personal names or accusations.');
       return;
     }
 
@@ -113,7 +123,7 @@ export default function ReportPage() {
           setLocating(false);
         },
         (err) => {
-          console.info('Geolocation unavailable; maintaining regional default.', err);
+          console.info('Geolocation unavailable; using default reference.', err);
           setLocating(false);
         },
         { enableHighAccuracy: true, timeout: 5000 }
@@ -127,7 +137,7 @@ export default function ReportPage() {
       const result = await sanitizeMedia(file, { preBlur });
       setImagePreview(result.dataUrl);
     } catch (err: any) {
-      console.warn('Failed to sanitize preview image:', err);
+      console.warn('Failed to prepare preview image:', err);
     } finally {
       setProcessingMedia(false);
     }
@@ -155,12 +165,11 @@ export default function ReportPage() {
 
       const neutralityCheck = checkTextNeutrality(`${condition} ${landmark}`);
       if (!neutralityCheck.isValid) {
-        setValidationError(neutralityCheck.warning || 'Neutrality violation detected.');
+        setValidationError(neutralityCheck.warning || 'Please describe the problem factually.');
         setSubmitting(false);
         return;
       }
 
-      // Consolidated sanitization seam
       const sanitization = await sanitizeObservation({
         observation: {
           category: category as any,
@@ -173,7 +182,7 @@ export default function ReportPage() {
       });
 
       if (!sanitization.isValid) {
-        setValidationError(sanitization.violations[0] || 'Validation failed');
+        setValidationError(sanitization.violations[0] || 'Please check your inputs and try again.');
         setSubmitting(false);
         return;
       }
@@ -198,7 +207,6 @@ export default function ReportPage() {
 
       const createdIssue = await submitIssueReport(payload);
 
-      // Record device report action in local storage to prevent double-submission
       if (typeof window !== 'undefined') {
         try {
           const votedIssues = JSON.parse(localStorage.getItem('civictrace_voted_issues') || '{}');
@@ -211,230 +219,247 @@ export default function ReportPage() {
 
       router.push(`/issue/${createdIssue.id}`);
     } catch (err: any) {
-      setValidationError(err.message || 'Failed to submit report');
+      setValidationError(err.message || 'Failed to submit report. Please try again.');
       setSubmitting(false);
     }
   };
 
-  // Step Completion Calculation
-  const isStep1Done = !!category;
-  const isStep2Done = !!digipin;
-  const isStep3Done = !!imagePreview;
-  const isStep4Done = condition.trim().length > 5 && landmark.trim().length > 3 && !validationError;
+  const progressPercent = activeStep === 1 ? 33 : activeStep === 2 ? 66 : 100;
 
   return (
-    <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-8 w-full">
-      {/* Top Breadcrumb */}
-      <div className="mb-4 sm:mb-6 flex items-center justify-between">
+    <div className="max-w-3xl mx-auto px-3.5 sm:px-6 py-3 sm:py-8 w-full pb-32 md:pb-12">
+      {/* Top Header Row with Back Navigation & Privacy Stamp */}
+      <div className="mb-3 sm:mb-4 flex items-center justify-between gap-2">
         <Link
           href="/"
-          className="inline-flex items-center space-x-1.5 text-xs font-semibold text-zinc-600 hover:text-zinc-900 transition-colors"
+          className="inline-flex items-center space-x-1.5 py-1.5 px-3 rounded-full bg-white border border-[#E0E2EC] text-xs font-semibold text-[#5F6368] hover:text-[#1F1F1F] shadow-xs transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Feed & Map</span>
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Map</span>
         </Link>
-        <span className="text-[11px] font-mono text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded border border-zinc-200">
-          Hardware Key · Zero Sign-in
+        <span className="text-[10px] sm:text-[11px] font-semibold text-[#0F9D58] bg-[#E6F4EA] px-2.5 sm:px-3 py-1 rounded-full border border-[#CEEAD6] flex items-center gap-1 shrink-0">
+          <ShieldCheck className="w-3.5 h-3.5" />
+          <span>Anonymous · Zero Sign-in</span>
         </span>
       </div>
 
-      {/* Page Title */}
-      <div className="mb-6 text-left">
-        <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 tracking-tight">
-          Record a Public Civic Observation
+      {/* Title */}
+      <div className="mb-3 sm:mb-5">
+        <h1 className="text-lg sm:text-2xl font-bold text-[#1F1F1F] tracking-tight">
+          Report a Problem
         </h1>
-        <p className="text-xs sm:text-sm text-zinc-600 mt-1 max-w-2xl">
-          Anchored to India&apos;s National DIGIPIN standard. Raw GPS coordinates and personal identifiers are never stored.
+        <p className="text-xs text-[#5F6368] mt-0.5 max-w-xl leading-relaxed">
+          Log an infrastructure hazard. Your identity is never recorded.
         </p>
       </div>
 
-      {/* Modern Refined Step Indicator */}
-      <div className="grid grid-cols-4 gap-2 mb-6 sm:mb-8">
-        {[
-          { num: '1', title: 'Category', done: isStep1Done },
-          { num: '2', title: 'DIGIPIN', done: isStep2Done },
-          { num: '3', title: 'Evidence', done: isStep3Done },
-          { num: '4', title: 'Details', done: isStep4Done },
-        ].map((step, idx) => (
+      {/* Visual Stepper & Progress Bar */}
+      <div className="mb-4 bg-white p-2 sm:p-3 rounded-2xl border border-[#E0E2EC] shadow-xs">
+        {/* Step Progress Line */}
+        <div className="w-full bg-[#F1F3F4] h-1.5 rounded-full overflow-hidden mb-2">
           <div
-            key={idx}
-            className={`p-2 sm:p-2.5 rounded-lg border transition-all text-left flex items-center space-x-2 ${
-              step.done
-                ? 'bg-emerald-50 border-emerald-300 text-emerald-950 shadow-sm'
-                : 'bg-white border-zinc-200 text-zinc-500'
-            }`}
-          >
-            <span
-              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                step.done ? 'bg-emerald-600 text-white' : 'bg-zinc-100 text-zinc-600'
-              }`}
-            >
-              {step.done ? '✓' : step.num}
-            </span>
-            <span className="text-[11px] sm:text-xs font-semibold truncate">{step.title}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Responsive Form Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Sticky Reference Card */}
-        <div className="lg:col-span-4 space-y-4 lg:sticky lg:top-20 order-2 lg:order-1">
-          {/* DIGIPIN Identity Card */}
-          <div className="p-5 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-3.5">
-            <div className="flex items-center justify-between pb-2 border-b border-zinc-100">
-              <span className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center space-x-1.5">
-                <Navigation className="w-3.5 h-3.5 text-sky-700" />
-                <span>Spatial Reference</span>
-              </span>
-              <button
-                type="button"
-                onClick={detectLocation}
-                disabled={locating}
-                className="text-[11px] font-semibold text-zinc-600 hover:text-zinc-900 inline-flex items-center space-x-1"
-              >
-                <RefreshCw className={`w-3 h-3 ${locating ? 'animate-spin' : ''}`} />
-                <span>{locating ? 'Locating...' : 'Refresh'}</span>
-              </button>
-            </div>
-
-            {/* DIGIPIN Code */}
-            <div>
-              <span className="text-[11px] font-medium text-zinc-500 block mb-1">Assigned Postal Grid:</span>
-              <div className="font-mono text-base sm:text-lg font-bold text-zinc-900 bg-zinc-50 border border-zinc-200 px-3 py-2 rounded-lg text-center tracking-wider">
-                {formatDigipin(digipin) || 'RESOLVING...'}
-              </div>
-            </div>
-
-            {digipinError && (
-              <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
-                {digipinError}
-              </div>
-            )}
-
-            <div className="text-[11px] text-zinc-600 space-y-1.5 bg-zinc-50 p-3 rounded-lg border border-zinc-200">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-zinc-500">Grid Precision:</span>
-                <span className="font-mono font-semibold text-zinc-800">Level 10 (~4m × 4m)</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-zinc-500">Privacy Seam:</span>
-                <span className="font-semibold text-emerald-700">Centroid Snapped</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-zinc-500">Authority Routing:</span>
-                <span className="font-semibold text-zinc-800">Auto-Resolved</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Privacy Guarantee Card */}
-          <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200 space-y-1.5 text-xs">
-            <div className="font-bold text-zinc-900 flex items-center space-x-1.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Cryptographic Guarantee</span>
-            </div>
-            <p className="text-[11px] text-zinc-600 leading-relaxed">
-              Your device generates a local pseudo-random key strictly retained on your phone. CivicTrace proves you are a verified physical witness without collecting identity or phone numbers.
-            </p>
-          </div>
+            className="bg-[#1A73E8] h-full transition-all duration-300 rounded-full"
+            style={{ width: `${progressPercent}%` }}
+          ></div>
         </div>
 
-        {/* Right Main Form Column */}
-        <form onSubmit={handleSubmit} className="lg:col-span-8 p-5 sm:p-7 space-y-6 bg-white rounded-xl border border-zinc-200 shadow-sm order-1 lg:order-2">
-          {/* Step 1: Category Selection */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700 mb-2.5">
-              1. Select Hazard Category
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {CATEGORIES.map((cat) => {
-                const isSelected = category === cat.id;
-                return (
-                  <button
-                    type="button"
-                    key={cat.id}
-                    onClick={() => setCategory(cat.id)}
-                    className={`p-3 rounded-xl text-left transition-all flex items-center space-x-2.5 border ${
-                      isSelected
-                        ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm'
-                        : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border-zinc-200'
-                    }`}
-                  >
-                    <span className="text-xl shrink-0">{cat.icon}</span>
-                    <span className="text-xs font-semibold leading-snug">{cat.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+        {/* Stepper Buttons (Responsive Labels) */}
+        <div className="flex items-center justify-between gap-1">
+          {[
+            { step: 1, short: 'Category', full: '1. Problem & Location' },
+            { step: 2, short: 'Photo', full: '2. Add Photo' },
+            { step: 3, short: 'Details', full: '3. Description' },
+          ].map((item) => {
+            const isActive = activeStep === item.step;
+            const isDone = activeStep > item.step;
+            return (
+              <button
+                key={item.step}
+                type="button"
+                onClick={() => setActiveStep(item.step as any)}
+                className={`flex-1 flex items-center justify-center space-x-1.5 py-1 px-2 rounded-xl text-xs font-semibold transition-all ${
+                  isActive
+                    ? 'bg-[#E8F0FE] text-[#041E49] shadow-xs'
+                    : isDone
+                    ? 'text-[#0F9D58] hover:bg-[#F1F3F4]'
+                    : 'text-[#747775] hover:bg-[#F8F9FA]'
+                }`}
+              >
+                <span
+                  className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center text-[10px] sm:text-[11px] font-bold shrink-0 ${
+                    isActive
+                      ? 'bg-[#1A73E8] text-white'
+                      : isDone
+                      ? 'bg-[#0F9D58] text-white'
+                      : 'bg-[#F1F3F4] text-[#747775]'
+                  }`}
+                >
+                  {isDone ? '✓' : item.step}
+                </span>
+                <span className="sm:hidden">{item.short}</span>
+                <span className="hidden sm:inline">{item.full}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-          {/* Step 2: India DIGIPIN Reference */}
-          <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200 space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 flex items-center space-x-1.5">
-                <MapPin className="w-3.5 h-3.5 text-zinc-600" />
-                <span>2. India DIGIPIN Coordinate Reference</span>
+      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+        {/* STEP 1: Location & Type */}
+        {activeStep === 1 && (
+          <div className="bg-white rounded-3xl border border-[#E0E2EC] p-4 sm:p-7 shadow-sm space-y-5 sm:space-y-6 animate-in fade-in duration-200">
+            {/* Category Grid */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#5F6368] mb-2.5">
+                What kind of problem is it?
               </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
+                {CATEGORIES.map((cat) => {
+                  const isSelected = category === cat.id;
+                  return (
+                    <button
+                      type="button"
+                      key={cat.id}
+                      onClick={() => setCategory(cat.id)}
+                      className={`p-3 sm:p-4 rounded-2xl text-left transition-all flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 border ${
+                        isSelected
+                          ? 'bg-[#E8F0FE] text-[#041E49] border-[#1A73E8] shadow-sm ring-1 ring-[#1A73E8]'
+                          : 'bg-white hover:bg-[#F8F9FA] text-[#1F1F1F] border-[#E0E2EC]'
+                      }`}
+                    >
+                      <span className="text-2xl sm:text-2xl shrink-0">{cat.icon}</span>
+                      <span className="text-xs sm:text-xs font-semibold leading-tight">{cat.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Mobile-Optimized Location Card */}
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8F9FA] border border-[#E0E2EC] space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#5F6368] flex items-center space-x-1.5">
+                  <Navigation className="w-3.5 h-3.5 text-[#1A73E8]" />
+                  <span>Location (DIGIPIN Code)</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={detectLocation}
+                  disabled={locating}
+                  className="m3-btn-tonal text-[11px] py-1 px-2.5 text-[#041E49] shrink-0"
+                >
+                  <RefreshCw className={`w-3 h-3 ${locating ? 'animate-spin' : ''}`} />
+                  <span>{locating ? 'Locating...' : 'Update GPS'}</span>
+                </button>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white p-3 rounded-xl border border-[#E0E2EC]">
+                <div className="font-mono text-base sm:text-lg font-bold text-[#1F1F1F] tracking-wide text-center sm:text-left flex items-center justify-center sm:justify-start space-x-2">
+                  {locating ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-[#1A73E8]" />
+                      <span className="text-xs font-semibold text-[#5F6368] font-sans">Acquiring GPS fix...</span>
+                    </>
+                  ) : (
+                    formatDigipin(digipin) || 'Finding location code...'
+                  )}
+                </div>
+                <span className="text-[11px] text-[#0F9D58] font-medium flex items-center justify-center sm:justify-end gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>4m × 4m Postal Grid</span>
+                </span>
+              </div>
+
+              {digipinError && (
+                <div className="p-2.5 rounded-xl bg-[#FEF7E0] border border-[#F29900]/30 text-[#B06000] text-xs font-medium">
+                  {digipinError}
+                </div>
+              )}
+            </div>
+
+            {/* Step 1 Actions */}
+            <div className="pt-2 flex justify-end">
               <button
                 type="button"
-                onClick={detectLocation}
-                disabled={locating}
-                className="text-xs font-semibold text-zinc-600 hover:text-zinc-900"
+                onClick={() => setActiveStep(2)}
+                className="w-full sm:w-auto m3-btn-primary text-xs sm:text-sm py-2.5 px-6 font-semibold flex items-center justify-center gap-1.5"
               >
-                {locating ? 'Resolving GPS...' : 'Refresh'}
+                <span>Continue to Photo</span>
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
-              <div className="font-mono text-base font-bold text-zinc-900 bg-white border border-zinc-200 px-3.5 py-1.5 rounded-lg w-full sm:w-auto text-center sm:text-left">
-                {formatDigipin(digipin) || 'RESOLVING DIGIPIN...'}
-              </div>
-              <p className="text-[11px] text-zinc-500 text-center sm:text-right leading-tight">
-                Standard Level 10 Cell (~4m × 4m)
-                <br />
-                <span className="text-zinc-400">Raw GPS discarded after grid resolution</span>
-              </p>
-            </div>
           </div>
+        )}
 
-          {/* Step 3: Media Upload with Client Pre-Blur */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700">
-                3. Visual Evidence (Auto-Sanitized)
-              </label>
-              <label className="flex items-center space-x-1.5 text-xs font-medium text-zinc-600 cursor-pointer">
+        {/* STEP 2: Add Photo */}
+        {activeStep === 2 && (
+          <div className="bg-white rounded-3xl border border-[#E0E2EC] p-4 sm:p-7 shadow-sm space-y-5 sm:space-y-6 animate-in fade-in duration-200">
+            {/* Header & Privacy Switch */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#5F6368]">
+                  Add a Photo (Optional)
+                </label>
+                <span className="text-[11px] text-[#5F6368]">Step 2 of 3</span>
+              </div>
+              <p className="text-xs text-[#5F6368]">
+                A photo helps authorities verify and fix the issue much faster.
+              </p>
+
+              {/* Privacy Pre-blur Toggle Card */}
+              <div
+                onClick={() => handleTogglePreBlur(!isPreBlurred)}
+                className="p-3 rounded-2xl bg-[#F8F9FA] border border-[#E0E2EC] flex items-center justify-between cursor-pointer hover:bg-[#F1F3F4] transition-colors"
+              >
+                <div className="flex items-center space-x-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-[#E8F0FE] text-[#1A73E8] flex items-center justify-center shrink-0">
+                    <EyeOff className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-[#1F1F1F]">Auto-blur faces & plates</div>
+                    <div className="text-[11px] text-[#5F6368]">Protects privacy before uploading</div>
+                  </div>
+                </div>
                 <input
                   type="checkbox"
                   checked={isPreBlurred}
                   onChange={(e) => handleTogglePreBlur(e.target.checked)}
-                  className="rounded border-zinc-300 text-zinc-900 focus:ring-0 w-3.5 h-3.5"
+                  className="rounded text-[#1A73E8] focus:ring-0 w-4 h-4 ml-2 cursor-pointer"
+                  onClick={(e) => e.stopPropagation()}
                 />
-                <EyeOff className="w-3.5 h-3.5 text-zinc-600" />
-                <span>Auto-blur faces & plates</span>
-              </label>
+              </div>
             </div>
 
-            <div className="relative border border-dashed border-zinc-300 hover:border-zinc-400 rounded-xl p-5 text-center transition-colors bg-zinc-50/50">
+            {/* Photo Capture & Upload Box */}
+            <div className="relative border-2 border-dashed border-[#C4C7C5] hover:border-[#1A73E8] rounded-2xl p-5 sm:p-8 text-center transition-colors bg-[#F8F9FA]/60">
               <input
                 type="file"
                 accept="image/*"
                 onChange={handleImageUpload}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
-              {imagePreview ? (
-                <div className="space-y-2.5">
+              {processingMedia ? (
+                <div className="py-8 sm:py-10 flex flex-col items-center justify-center space-y-2 animate-in fade-in">
+                  <RefreshCw className="w-8 h-8 text-[#1A73E8] animate-spin mb-1" />
+                  <p className="text-xs sm:text-sm font-semibold text-[#1F1F1F]">
+                    Sanitizing & Pre-blurring photo...
+                  </p>
+                  <p className="text-[11px] text-[#5F6368]">
+                    Stripping metadata and applying on-device privacy safeguards
+                  </p>
+                </div>
+              ) : imagePreview ? (
+                <div className="space-y-3">
                   <img
                     src={imagePreview}
-                    alt="Sanitized Evidence"
-                    className="max-h-56 mx-auto rounded-lg border border-zinc-200 shadow-sm object-contain"
+                    alt="Uploaded photo preview"
+                    className="max-h-56 sm:max-h-64 mx-auto rounded-xl border border-[#E0E2EC] shadow-sm object-contain"
                   />
-                  <div className="flex items-center justify-center space-x-2 pt-0.5">
-                    <p className="text-xs font-medium text-emerald-800 bg-emerald-50 inline-flex items-center space-x-1 px-2.5 py-1 rounded border border-emerald-200">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>EXIF stripped &amp; privacy pre-blurred</span>
-                    </p>
+                  <div className="flex items-center justify-center space-x-2.5 pt-1">
+                    <span className="text-[11px] sm:text-xs font-medium text-[#0F9D58] bg-[#E6F4EA] inline-flex items-center space-x-1 px-3 py-1 rounded-full border border-[#CEEAD6]">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Privacy Protected</span>
+                    </span>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -442,92 +467,157 @@ export default function ReportPage() {
                         setImagePreview(null);
                         setSelectedFile(null);
                       }}
-                      className="text-xs font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1 rounded transition-colors"
+                      className="text-[11px] sm:text-xs font-semibold text-[#D93025] hover:bg-[#FCE8E6] px-3 py-1 rounded-full border border-[#FCE8E6] transition-colors"
                     >
-                      Remove Photo
+                      Remove
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="py-6 flex flex-col items-center">
-                  <Camera className="w-8 h-8 text-zinc-400 mb-2 stroke-[1.5]" />
-                  <p className="text-xs font-semibold text-zinc-800">Tap to capture or upload evidence photo</p>
-                  <p className="text-[11px] text-zinc-500 mt-0.5">Faces, plates, and metadata are automatically sanitized</p>
+                <div className="py-6 sm:py-8 flex flex-col items-center">
+                  <div className="w-12 h-12 rounded-full bg-[#E8F0FE] text-[#1A73E8] flex items-center justify-center mb-2.5">
+                    <Camera className="w-6 h-6 text-[#1A73E8]" />
+                  </div>
+                  <p className="text-xs sm:text-sm font-semibold text-[#1F1F1F]">
+                    Tap to take or choose photo
+                  </p>
+                  <p className="text-[11px] text-[#5F6368] mt-1">
+                    Camera or gallery photo from device
+                  </p>
                 </div>
               )}
             </div>
-          </div>
 
-          {/* Step 4: Structured Factual Description */}
-          <div className="space-y-3">
-            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700">
-              4. Objective Physical Description
-            </label>
-
-            <div>
-              <input
-                type="text"
-                required
-                placeholder="Observed condition (e.g. Broken asphalt 2m wide, 15cm deep)"
-                value={condition}
-                onChange={(e) => setCondition(e.target.value)}
-                className="w-full text-xs sm:text-sm p-3 rounded-lg border border-zinc-200 bg-white placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-900"
-              />
+            {/* Step 2 Actions */}
+            <div className="pt-2 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setActiveStep(1)}
+                className="m3-btn-outlined text-xs sm:text-sm py-2.5 px-4 sm:px-5 font-semibold"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveStep(3)}
+                className="m3-btn-primary text-xs sm:text-sm py-2.5 px-5 sm:px-6 font-semibold flex-1 sm:flex-initial flex items-center justify-center gap-1.5"
+              >
+                <span>Continue to Details</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
+          </div>
+        )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <input
-                type="text"
-                required
-                placeholder="Physical landmark (e.g. Opposite Metro Pillar 142)"
-                value={landmark}
-                onChange={(e) => setLandmark(e.target.value)}
-                className="w-full text-xs sm:text-sm p-3 rounded-lg border border-zinc-200 bg-white placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-900"
-              />
+        {/* STEP 3: Details & Submit */}
+        {activeStep === 3 && (
+          <div className="bg-white rounded-3xl border border-[#E0E2EC] p-4 sm:p-7 shadow-sm space-y-5 sm:space-y-6 animate-in fade-in duration-200">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#5F6368]">
+                  Describe the Problem
+                </label>
+                <span className="text-[11px] text-[#5F6368]">Step 3 of 3</span>
+              </div>
 
-              <div className="flex items-center space-x-2 px-3.5 py-2 bg-zinc-50 border border-zinc-200 rounded-lg">
-                <span className="text-xs text-zinc-600 whitespace-nowrap">Unresolved for:</span>
+              {/* Observed Condition */}
+              <div>
+                <label className="text-xs font-semibold text-[#1F1F1F] block mb-1">
+                  What is the issue? <span className="text-rose-600">*</span>
+                </label>
                 <input
-                  type="number"
-                  min="0"
-                  max="365"
-                  value={durationDays}
-                  onChange={(e) => setDurationDays(Number(e.target.value))}
-                  className="w-16 bg-white border border-zinc-300 rounded px-2 py-1 text-xs text-center font-semibold text-zinc-900 focus:outline-none"
+                  type="text"
+                  required
+                  placeholder="e.g. Deep pothole across left lane, broken drain cover"
+                  value={condition}
+                  onChange={(e) => setCondition(e.target.value)}
+                  className="m3-input text-xs sm:text-sm"
                 />
-                <span className="text-xs text-zinc-600">days</span>
               </div>
+
+              {/* Landmark */}
+              <div>
+                <label className="text-xs font-semibold text-[#1F1F1F] block mb-1">
+                  Nearby landmark or street name <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Opposite City Hospital, near Bus Stop 14"
+                  value={landmark}
+                  onChange={(e) => setLandmark(e.target.value)}
+                  className="m3-input text-xs sm:text-sm"
+                />
+              </div>
+
+              {/* Duration Presets */}
+              <div>
+                <label className="text-xs font-semibold text-[#1F1F1F] block mb-1.5">
+                  How long has this issue been here?
+                </label>
+                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                  {DURATION_PRESETS.map((preset) => {
+                    const isSelected = durationDays === preset.days;
+                    return (
+                      <button
+                        key={preset.days}
+                        type="button"
+                        onClick={() => setDurationDays(preset.days)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border ${
+                          isSelected
+                            ? 'bg-[#E8F0FE] text-[#041E49] border-[#1A73E8]'
+                            : 'bg-white text-[#5F6368] border-[#E0E2EC] hover:bg-[#F8F9FA]'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Friendly feedback */}
+              {condition.trim() && !validationError && (
+                <div className="p-3 rounded-2xl bg-[#E6F4EA] border border-[#CEEAD6] text-[#0D652D] text-xs font-semibold flex items-center space-x-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-[#0F9D58]" />
+                  <span>Looks good! Clear and factual.</span>
+                </div>
+              )}
+
+              {/* Helpful warning if needed */}
+              {validationError && (
+                <div className="p-3 rounded-2xl bg-[#FCE8E6] border border-[#FAD2CF] text-[#B3261E] text-xs font-medium flex items-start space-x-2 animate-in fade-in">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-[#D93025] mt-0.5" />
+                  <span>{validationError}</span>
+                </div>
+              )}
             </div>
 
-            {/* Positive Neutrality Confirmation */}
-            {condition.trim() && !validationError && (
-              <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center space-x-2 animate-in fade-in duration-150">
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-700" />
-                <span>✓ Objective Factual Narrative verified (Non-defamatory, no political entities)</span>
-              </div>
-            )}
+            {/* Final Stepper Navigation & Submit */}
+            <div className="pt-3 border-t border-[#E0E2EC] flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setActiveStep(2)}
+                className="m3-btn-outlined text-xs sm:text-sm py-2.5 px-4 sm:px-5 font-semibold"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back</span>
+              </button>
+
+              <button
+                type="submit"
+                disabled={submitting || !!validationError || !condition.trim()}
+                className="m3-btn-primary text-xs sm:text-sm py-2.5 px-6 font-semibold flex-1 sm:flex-initial flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+              >
+                {submitting && <RefreshCw className="w-4 h-4 animate-spin text-white" />}
+                <span>{submitting ? 'Submitting Report...' : 'Submit Report'}</span>
+                {!submitting && <ArrowRight className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
-
-          {/* Neutrality / Defamation Warning Banner */}
-          {validationError && (
-            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-medium flex items-start space-x-2 animate-in fade-in duration-150">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-700 mt-0.5" />
-              <span>{validationError}</span>
-            </div>
-          )}
-
-          {/* Submit Action */}
-          <button
-            type="submit"
-            disabled={submitting || !!validationError}
-            className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 text-white text-sm font-semibold rounded-lg shadow-sm flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.99]"
-          >
-            <Lock className="w-4 h-4" />
-            <span>{submitting ? 'Signing Nullifier & Submitting...' : 'Sign & Submit Anonymous Observation'}</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </form>
-      </div>
+        )}
+      </form>
     </div>
   );
 }

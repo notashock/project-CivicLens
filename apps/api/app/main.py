@@ -138,6 +138,7 @@ async def security_and_payload_limit_middleware(request: Request, call_next):
     return response
 
 @app.get("/health")
+@app.get("/api/health")
 async def health_check():
     from apps.api.app.adapters.postgres_adapter import PostgresDatabaseAdapter
     is_postgres = isinstance(db, PostgresDatabaseAdapter)
@@ -153,6 +154,7 @@ async def health_check():
     }
 
 @app.get("/ready")
+@app.get("/api/ready")
 async def readiness_check():
     from apps.api.app.adapters.postgres_adapter import PostgresDatabaseAdapter
     is_postgres = isinstance(db, PostgresDatabaseAdapter)

@@ -21,6 +21,7 @@ export MALLOC_ARENA_MAX=2
 export UV_THREADPOOL_SIZE=2
 export PYTHONUNBUFFERED=1
 export NEXT_TELEMETRY_DISABLED=1
+export HOSTNAME="${HOSTNAME:-0.0.0.0}"
 
 # Graceful shutdown handler
 cleanup() {
@@ -45,10 +46,10 @@ cleanup() {
 
 trap cleanup TERM INT HUP
 
-# 1. Start FastAPI Backend in background (constrained worker & concurrency for 512MB limit)
-echo "[SUPERVISOR] Starting FastAPI Backend on 0.0.0.0:${API_PORT} (${API_WORKERS} worker, max 50 concurrent)..."
+# 1. Start FastAPI Backend in background on localhost (so Render routes only to Next.js on PORT)
+echo "[SUPERVISOR] Starting FastAPI Backend on 127.0.0.1:${API_PORT} (${API_WORKERS} worker, max 50 concurrent)..."
 python -m uvicorn apps.api.app.main:app \
-    --host 0.0.0.0 \
+    --host 127.0.0.1 \
     --port "$API_PORT" \
     --workers "$API_WORKERS" \
     --limit-concurrency 50 \

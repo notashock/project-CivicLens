@@ -86,8 +86,8 @@ COPY scripts /app/scripts
 RUN sed -i 's/\r$//' /app/scripts/docker-entrypoint.sh /app/scripts/docker-healthcheck.sh && \
     chmod +x /app/scripts/docker-entrypoint.sh /app/scripts/docker-healthcheck.sh
 
-# Expose Next.js Web (3000) and FastAPI Backend (8000)
-EXPOSE 3000 8000
+# Expose Next.js Web port (Render dynamically provides PORT at runtime, default 3000)
+EXPOSE 3000
 
 # Continuous Healthcheck & Lifecycle Maintenance
 HEALTHCHECK --interval=20s --timeout=5s --start-period=20s --retries=3 \

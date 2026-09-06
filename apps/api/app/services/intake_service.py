@@ -1,3 +1,4 @@
+import re
 import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, Tuple, Optional
@@ -8,6 +9,7 @@ from ..models import (
     IssueCreateRequest,
     VerificationRequest,
     ResolutionClaimRequest,
+    CommunityNoteCreateRequest,
     IssueCategory,
     IssueStatus,
     ActionType,
@@ -19,6 +21,7 @@ from ..database import db
 from .digipin_service import encode_digipin, decode_digipin, haversine_distance_meters
 from .jurisdiction_service import resolve_jurisdiction
 from .nullifier_service import global_nullifier_registry
+from .neutrality_filter import neutrality_filter
 from ..state_machine import transition_issue_state
 
 class IntakeService:
@@ -298,5 +301,153 @@ class IntakeService:
         issue.timeline.append(claim_event)
         await db.save(issue)
         return issue
+
+    async def process_attestation_note(
+        self,
+        issue_id: str,
+        payload: CommunityNoteCreateRequest
+    ) -> Tuple[Dict[str, Any], Optional[Issue]]:
+        """
+        Processes an incoming Attestation Note through the intake seam:
+        1. Validates issue existence and non-empty submission payload.
+        2. Enforces dual-tier neutrality & image OCR moderation.
+        3. Evaluates ephemeral spatial proximity (<500m) for consensus quorum (raw coordinates discarded).
+        4. Enforces 15-minute stance cooldown and hardware nullifier checks.
+        5. If consensus verified, mutates tallies, executes state machine transitions, and promotes photo evidence.
+        6. Persists community note (scrubbing raw GPS and nullifier hash).
+        
+        Returns:
+            Tuple[public_note: Dict[str, Any], updated_issue: Optional[Issue]]
+        """
+        issue = await db.get_by_id(issue_id)
+        if not issue:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Issue '{issue_id}' not found")
+
+        # 1. Validation: Empty check
+        stance = (payload.stance or "NEUTRAL").upper()
+        if not payload.text.strip() and stance == "NEUTRAL" and not payload.media_urls:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Community note must contain text narrative, an attestation stance, or an evidence photo."
+            )
+
+        # 2. Content Moderation: Dual-tier neutrality & image OCR inspection
+        if payload.text and payload.text.strip():
+            is_valid, error_msg = neutrality_filter.validate_submission(
+                text=payload.text,
+                media_list=payload.media_urls
+            )
+            if not is_valid:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+        elif payload.media_urls:
+            for idx, img_b64 in enumerate(payload.media_urls):
+                img_error = neutrality_filter.validate_image_ocr(img_b64)
+                if img_error:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Evidence photo #{idx + 1}: {img_error}")
+
+        now = datetime.utcnow()
+        now_ms = int(now.timestamp() * 1000)
+
+        # 3. Spatial Proximity Check (<500m of DIGIPIN Centroid) for Consensus Quorum (ADR 0014, ADR 0015)
+        # Evaluated strictly in-memory; raw coordinates are never saved to database records.
+        is_consensus_verified = False
+        if payload.lat is not None and payload.lon is not None:
+            dist_m = haversine_distance_meters(payload.lat, payload.lon, issue.lat, issue.lon)
+            if dist_m <= 500.0:
+                is_consensus_verified = True
+
+        # Semantic badge without random codes or hex numbers
+        raw_badge = payload.participant_badge.strip() if (payload.participant_badge and payload.participant_badge.strip()) else None
+        if raw_badge and re.search(r"\[[0-9a-fA-F]+\]", raw_badge):
+            raw_badge = re.sub(r"\s*\[[0-9a-fA-F]+\]", "", raw_badge).strip() or None
+
+        badge = raw_badge or ("Local Eyewitness" if is_consensus_verified else "Community Contributor")
+
+        # 4. 15-Minute Stance Change Cooldown & Hardware Nullifier Checks (ADR 0014)
+        if payload.nullifier_hash and stance != "NEUTRAL":
+            can_change, remaining_sec = global_nullifier_registry.can_update_stance(
+                issue_id=issue_id,
+                nullifier_hash=payload.nullifier_hash,
+                new_stance=stance,
+                cooldown_seconds=900
+            )
+            if not can_change:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Attestation stance change on cooldown. Next stance update available in {max(1, remaining_sec // 60)} minutes."
+                )
+
+        # 5. Process Consensus Quorum & Evidence Promotion if Physically Verified
+        updated_issue: Optional[Issue] = None
+        if is_consensus_verified and stance != "NEUTRAL" and payload.nullifier_hash:
+            prev_stance = global_nullifier_registry.record_action(issue_id, payload.nullifier_hash, stance)
+
+            # If flipping stance, decrement previous tally
+            if prev_stance:
+                if prev_stance in ["CONFIRM", "RESOLUTION_VERIFY"]:
+                    issue.verified_confirm_count = max(0, issue.verified_confirm_count - 1)
+                elif prev_stance in ["DISPUTE", "RESOLUTION_DISPUTE"]:
+                    issue.verified_dispute_count = max(0, issue.verified_dispute_count - 1)
+
+            action_map = {
+                "CONFIRM": ActionType.CONFIRM,
+                "DISPUTE": ActionType.DISPUTE,
+                "RESOLUTION_VERIFY": ActionType.RESOLUTION_VERIFY,
+                "RESOLUTION_DISPUTE": ActionType.RESOLUTION_DISPUTE
+            }
+            act = action_map.get(stance, ActionType.CONFIRM)
+            issue, state_event = transition_issue_state(
+                issue=issue,
+                action=act,
+                has_photo_evidence=bool(payload.media_urls)
+            )
+            if state_event:
+                issue.timeline.append(state_event)
+
+            # Promote verified witness photo(s) to primary Issue Evidence Gallery
+            if payload.media_urls:
+                for idx, media_url in enumerate(payload.media_urls):
+                    promoted_item = EvidenceMedia(
+                        id=f"EVD-PROM-{issue_id}-{now_ms}-{idx}",
+                        issue_id=issue_id,
+                        media_url=media_url,
+                        is_sanitized=True,
+                        is_verified=True,
+                        stance=stance,
+                        created_at=now
+                    )
+                    issue.evidence_list.append(promoted_item)
+
+            await db.save(issue)
+            updated_issue = issue
+
+        # 6. Save Note record (Strip raw GPS - coordinates are never persisted)
+        note_data = {
+            "id": f"NOTE-{issue_id}-{now_ms}",
+            "issue_id": issue_id,
+            "participant_badge": badge,
+            "stance": stance,
+            "is_consensus_verified": is_consensus_verified,
+            "nullifier_hash": payload.nullifier_hash,
+            "text": payload.text.strip(),
+            "media_urls": payload.media_urls,
+            "created_at": now.isoformat()
+        }
+
+        saved = await db.save_community_note(note_data)
+
+        # Clean public view - nullifier_hash, lat, and lon are completely scrubbed
+        public_note = {
+            "id": saved["id"],
+            "issue_id": saved["issue_id"],
+            "participant_badge": saved["participant_badge"],
+            "stance": saved["stance"],
+            "is_consensus_verified": saved["is_consensus_verified"],
+            "text": saved["text"],
+            "media_urls": saved.get("media_urls") or [],
+            "created_at": saved["created_at"]
+        }
+
+        return public_note, updated_issue
 
 intake_service = IntakeService()

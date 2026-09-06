@@ -7,6 +7,7 @@ from apps.api.app.models import (
     IssueCreateRequest,
     VerificationRequest,
     ResolutionClaimRequest,
+    CommunityNoteCreateRequest,
     IssueCategory,
     IssueStatus,
     ActionType
@@ -225,3 +226,115 @@ async def test_resolution_claim_lifecycle():
     assert claimed_issue.resolution_window_expires_at is not None
     assert claimed_issue.verified_confirm_count == 0
     assert claimed_issue.verified_dispute_count == 0
+
+@pytest.mark.asyncio
+async def test_process_attestation_note_on_site_promotes_evidence_and_updates_quorum():
+    issue_id = "CT-KA-BLR-000101" # Lat 12.9716, Lon 77.5946
+    initial_issue = await db.get_by_id(issue_id)
+    initial_confirms = initial_issue.verified_confirm_count
+    initial_evidence_count = len(initial_issue.evidence_list)
+
+    # Participant within 50m of issue location
+    payload = CommunityNoteCreateRequest(
+        text="Crew started gravel backfill on the open trench.",
+        stance="CONFIRM",
+        nullifier_hash="b" * 64,
+        lat=12.9718,
+        lon=77.5948,
+        media_urls=["data:image/jpeg;base64,/9j/4AAQSkZJRg=="]
+    )
+
+    note, updated_issue = await intake_service.process_attestation_note(issue_id, payload)
+    assert note["is_consensus_verified"] is True
+    assert note["participant_badge"] == "Local Eyewitness"
+    assert note["stance"] == "CONFIRM"
+    assert "lat" not in note
+    assert "lon" not in note
+    assert "nullifier_hash" not in note
+
+    assert updated_issue is not None
+    assert updated_issue.verified_confirm_count == initial_confirms + 1
+    assert len(updated_issue.evidence_list) == initial_evidence_count + 1
+
+    promoted_item = updated_issue.evidence_list[-1]
+    assert promoted_item.stance == "CONFIRM"
+    assert promoted_item.is_verified is True
+    assert promoted_item.media_url == "data:image/jpeg;base64,/9j/4AAQSkZJRg=="
+
+@pytest.mark.asyncio
+async def test_process_attestation_note_remote_adds_note_without_quorum():
+    issue_id = "CT-KA-BLR-000101"
+    initial_issue = await db.get_by_id(issue_id)
+    initial_confirms = initial_issue.verified_confirm_count
+
+    # Participant > 5km away
+    payload = CommunityNoteCreateRequest(
+        text="Remote observation: this junction was closed for detours earlier.",
+        stance="CONFIRM",
+        nullifier_hash="c" * 64,
+        lat=13.0200,
+        lon=77.5946
+    )
+
+    note, updated_issue = await intake_service.process_attestation_note(issue_id, payload)
+    assert note["is_consensus_verified"] is False
+    assert note["participant_badge"] == "Community Contributor"
+    assert updated_issue is None # No quorum tally or evidence promotion
+
+    reloaded_issue = await db.get_by_id(issue_id)
+    assert reloaded_issue.verified_confirm_count == initial_confirms
+
+@pytest.mark.asyncio
+async def test_process_attestation_note_enforces_stance_cooldown():
+    issue_id = "CT-KA-BLR-000101"
+    nullifier = "d" * 64
+
+    # 1. Initial CONFIRM note
+    first_payload = CommunityNoteCreateRequest(
+        text="Confirming hazard on-site.",
+        stance="CONFIRM",
+        nullifier_hash=nullifier,
+        lat=12.9716,
+        lon=77.5946
+    )
+    await intake_service.process_attestation_note(issue_id, first_payload)
+
+    # 2. Immediate flip to DISPUTE within 15-minute cooldown window
+    flip_payload = CommunityNoteCreateRequest(
+        text="Changed my mind, disputing now.",
+        stance="DISPUTE",
+        nullifier_hash=nullifier,
+        lat=12.9716,
+        lon=77.5946
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await intake_service.process_attestation_note(issue_id, flip_payload)
+    assert exc_info.value.status_code == 429
+    assert "cooldown" in exc_info.value.detail.lower()
+
+@pytest.mark.asyncio
+async def test_process_attestation_note_rejects_neutrality_violation():
+    issue_id = "CT-KA-BLR-000101"
+    payload = CommunityNoteCreateRequest(
+        text="The local MLA is responsible for this terrible delay!",
+        stance="CONFIRM",
+        nullifier_hash="e" * 64,
+        lat=12.9716,
+        lon=77.5946
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await intake_service.process_attestation_note(issue_id, payload)
+    assert exc_info.value.status_code == 400
+    assert "neutrality violation" in exc_info.value.detail.lower()
+
+@pytest.mark.asyncio
+async def test_process_attestation_note_rejects_empty_content():
+    issue_id = "CT-KA-BLR-000101"
+    payload = CommunityNoteCreateRequest(
+        text="   ",
+        stance="NEUTRAL"
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await intake_service.process_attestation_note(issue_id, payload)
+    assert exc_info.value.status_code == 400
+

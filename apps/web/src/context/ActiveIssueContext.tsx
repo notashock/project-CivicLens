@@ -7,34 +7,47 @@ export interface IssueHeaderActions {
   isNearby: boolean;
   userDistanceMeters: number | null;
   locationLoading: boolean;
+  isPermissionDenied?: boolean;
+  openPermissionModal?: () => void;
   refreshLocation: () => Promise<void>;
   handleShare: () => void;
   copiedLink: boolean;
 }
 
+export interface ReportHeaderState {
+  activeStep: 1 | 2 | 3;
+  setActiveStep?: (step: 1 | 2 | 3) => void;
+  submitting?: boolean;
+}
+
 interface ActiveIssueStateContextType {
   activeIssue: Issue | null;
   headerActions: IssueHeaderActions | null;
+  reportHeader: ReportHeaderState | null;
 }
 
 interface ActiveIssueDispatchContextType {
   setActiveIssue: (issue: Issue | null) => void;
   setHeaderActions: (actions: IssueHeaderActions | null) => void;
+  setReportHeader: (report: ReportHeaderState | null) => void;
 }
 
 const ActiveIssueStateContext = createContext<ActiveIssueStateContextType>({
   activeIssue: null,
   headerActions: null,
+  reportHeader: null,
 });
 
 const ActiveIssueDispatchContext = createContext<ActiveIssueDispatchContextType>({
   setActiveIssue: () => {},
   setHeaderActions: () => {},
+  setReportHeader: () => {},
 });
 
 export const ActiveIssueProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeIssue, setActiveIssueState] = useState<Issue | null>(null);
   const [headerActions, setHeaderActionsState] = useState<IssueHeaderActions | null>(null);
+  const [reportHeader, setReportHeaderState] = useState<ReportHeaderState | null>(null);
 
   const setActiveIssue = useCallback((issue: Issue | null) => {
     setActiveIssueState(issue);
@@ -50,6 +63,8 @@ export const ActiveIssueProvider: React.FC<{ children: React.ReactNode }> = ({ c
         prev.isNearby === actions.isNearby &&
         prev.userDistanceMeters === actions.userDistanceMeters &&
         prev.locationLoading === actions.locationLoading &&
+        prev.isPermissionDenied === actions.isPermissionDenied &&
+        prev.openPermissionModal === actions.openPermissionModal &&
         prev.refreshLocation === actions.refreshLocation &&
         prev.handleShare === actions.handleShare &&
         prev.copiedLink === actions.copiedLink
@@ -60,14 +75,30 @@ export const ActiveIssueProvider: React.FC<{ children: React.ReactNode }> = ({ c
     });
   }, []);
 
+  const setReportHeader = useCallback((report: ReportHeaderState | null) => {
+    setReportHeaderState((prev) => {
+      if (!prev && !report) return prev;
+      if (
+        prev &&
+        report &&
+        prev.activeStep === report.activeStep &&
+        prev.submitting === report.submitting &&
+        prev.setActiveStep === report.setActiveStep
+      ) {
+        return prev;
+      }
+      return report;
+    });
+  }, []);
+
   const stateValue = useMemo(
-    () => ({ activeIssue, headerActions }),
-    [activeIssue, headerActions]
+    () => ({ activeIssue, headerActions, reportHeader }),
+    [activeIssue, headerActions, reportHeader]
   );
 
   const dispatchValue = useMemo(
-    () => ({ setActiveIssue, setHeaderActions }),
-    [setActiveIssue, setHeaderActions]
+    () => ({ setActiveIssue, setHeaderActions, setReportHeader }),
+    [setActiveIssue, setHeaderActions, setReportHeader]
   );
 
   return (

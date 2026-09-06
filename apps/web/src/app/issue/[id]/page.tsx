@@ -32,6 +32,7 @@ import { IssueLifecycleTracker } from '@/components/issue/IssueLifecycleTracker'
 import { EvidenceGallery } from '@/components/issue/EvidenceGallery';
 import { ResolutionClaimModal } from '@/components/issue/ResolutionClaimModal';
 import { CommunityNotesThread } from '@/components/issue/CommunityNotesThread';
+import { LocationPermissionModal } from '@/components/LocationPermissionModal';
 
 export default function IssueDetailPage() {
   const params = useParams();
@@ -87,6 +88,8 @@ export default function IssueDetailPage() {
       isNearby: attestation.isNearby,
       userDistanceMeters: attestation.userDistanceMeters,
       locationLoading: attestation.locationLoading,
+      isPermissionDenied: attestation.isPermissionDenied,
+      openPermissionModal: () => attestation.setShowPermissionModal(true),
       refreshLocation: attestation.refreshLocation,
       handleShare,
       copiedLink,
@@ -95,6 +98,8 @@ export default function IssueDetailPage() {
     attestation.isNearby,
     attestation.userDistanceMeters,
     attestation.locationLoading,
+    attestation.isPermissionDenied,
+    attestation.setShowPermissionModal,
     attestation.refreshLocation,
     handleShare,
     copiedLink,
@@ -308,6 +313,25 @@ export default function IssueDetailPage() {
                 <AlertTriangle className="w-4 h-4 shrink-0" />
               )}
               <span className="flex-1">{attestation.actionFeedback.message}</span>
+            </div>
+          )}
+
+          {/* Location Permission Blocked Advisory Banner */}
+          {attestation.isPermissionDenied && (
+            <div className="bg-[#FCE8E6] border border-[#FAD2CF] rounded-2xl p-3 sm:p-3.5 flex items-center justify-between gap-3 text-xs shadow-xs animate-in fade-in">
+              <div className="flex items-center space-x-2.5 text-[#B3261E] min-w-0">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span className="font-semibold truncate">
+                  Location is blocked in browser settings. Eyewitness voting requires physical presence (&lt;500m).
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => attestation.setShowPermissionModal(true)}
+                className="shrink-0 bg-[#B3261E] hover:bg-[#8C1D18] text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all active:scale-95"
+              >
+                Enable GPS
+              </button>
             </div>
           )}
 
@@ -661,6 +685,15 @@ export default function IssueDetailPage() {
         onClose={() => setShowClaimModal(false)}
         onSuccess={(updated) => setIssue(updated)}
         showToast={attestation.showToast}
+      />
+
+      {/* 5. Location Permission Guidance Dialog */}
+      <LocationPermissionModal
+        isOpen={attestation.showPermissionModal}
+        onClose={() => attestation.setShowPermissionModal(false)}
+        onPermissionGranted={() => attestation.refreshLocation(false)}
+        title="Verify Physical Presence (<500m)"
+        reason="CivicTrace checks your proximity to verify this issue on the public ledger. Your exact location is never stored or tracked."
       />
     </div>
   );

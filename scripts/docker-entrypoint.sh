@@ -74,18 +74,16 @@ if [ $COUNT -eq $MAX_WAIT ]; then
     echo "[SUPERVISOR WARNING] FastAPI did not report healthy within ${MAX_WAIT}s. Proceeding with frontend launch..."
 fi
 
-# 2. Start Next.js 15 Web Application (direct process execution to eliminate npm wrapper RAM overhead)
+# 2. Start Next.js 15 Web Application (direct process execution from standalone app directory)
 echo "[SUPERVISOR] Starting Next.js Frontend on 0.0.0.0:${WEB_PORT} (V8 max heap: 192MB)..."
 if [ -f "/app/apps/web/.next/standalone/apps/web/server.js" ]; then
-    PORT="$WEB_PORT" node /app/apps/web/.next/standalone/apps/web/server.js &
+    (cd /app/apps/web/.next/standalone/apps/web && PORT="$WEB_PORT" HOSTNAME="0.0.0.0" node server.js) &
 elif [ -f "/app/apps/web/.next/standalone/server.js" ]; then
-    PORT="$WEB_PORT" node /app/apps/web/.next/standalone/server.js &
+    (cd /app/apps/web/.next/standalone && PORT="$WEB_PORT" HOSTNAME="0.0.0.0" node server.js) &
 elif [ -f "/app/.next/standalone/apps/web/server.js" ]; then
-    PORT="$WEB_PORT" node /app/.next/standalone/apps/web/server.js &
-elif [ -f "/app/node_modules/.bin/next" ]; then
-    /app/node_modules/.bin/next start /app/apps/web -p "$WEB_PORT" &
+    (cd /app/.next/standalone/apps/web && PORT="$WEB_PORT" HOSTNAME="0.0.0.0" node server.js) &
 else
-    npm run start --workspace=@civictrace/web &
+    (cd /app/apps/web && PORT="$WEB_PORT" HOSTNAME="0.0.0.0" npx next start -p "$WEB_PORT" -H 0.0.0.0) &
 fi
 WEB_PID=$!
 

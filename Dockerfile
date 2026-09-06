@@ -28,6 +28,8 @@ COPY apps/web ./apps/web
 # Build TypeScript packages & Next.js production bundle
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build --workspaces
+RUN cp -r apps/web/public apps/web/.next/standalone/apps/web/public 2>/dev/null || true
+RUN cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static 2>/dev/null || true
 
 # ------------------------------------------------------------------------------
 # Stage 2: Build Python Dependencies Wheelhouse

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkTextNeutrality } from '../src/lib/neutrality-checker.ts';
+import { checkTextNeutrality } from '@civictrace/sanitization-worker';
 
 test('Neutrality Checker: permits neutral physical infrastructure descriptions', () => {
   const input1 = 'Deep pothole on 100ft road near water tank causing vehicular skidding.';

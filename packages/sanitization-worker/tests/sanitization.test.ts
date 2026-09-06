@@ -2,13 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   validateAndFormatNarrative,
+  checkTextNeutrality,
   pixelateRegions,
   sanitizeMedia,
   sanitizeObservation,
   calculateFitDimensions,
   DEFAULT_PRIVACY_REGIONS,
-  StructuredObservation,
-} from '../src/index.js';
+  type StructuredObservation,
+} from '../dist/index.js';
 
 test('Factual Narrative Formatter - Valid Objective Report', () => {
   const validObs: StructuredObservation = {
@@ -161,3 +162,20 @@ test('sanitizeObservation rejects non-neutral text and returns violations', asyn
   assert.equal(result.sanitizedNarrative, undefined);
   assert.equal(result.mediaDataBase64, undefined);
 });
+
+test('checkTextNeutrality validates political parties, offices, and defamatory accusations', () => {
+  // Neutral
+  const neutral = checkTextNeutrality('Deep pothole on main road causing skidding');
+  assert.equal(neutral.isValid, true);
+
+  // Political parties
+  const party = checkTextNeutrality('BJP and Congress workers protested near pothole');
+  assert.equal(party.isValid, false);
+  assert.ok(party.warning?.includes('Neutrality Alert'));
+
+  // Defamatory accusation
+  const defamatory = checkTextNeutrality('Local contractor is a corrupt thief who stole money');
+  assert.equal(defamatory.isValid, false);
+  assert.ok(defamatory.warning?.includes('Neutrality Alert'));
+});
+

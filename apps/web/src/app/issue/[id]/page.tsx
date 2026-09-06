@@ -90,7 +90,7 @@ export default function IssueDetailPage() {
       locationLoading: attestation.locationLoading,
       isPermissionDenied: attestation.isPermissionDenied,
       openPermissionModal: () => attestation.setShowPermissionModal(true),
-      refreshLocation: attestation.refreshLocation,
+      refreshLocation: () => attestation.refreshLocation(false),
       handleShare,
       copiedLink,
     });
@@ -563,7 +563,7 @@ export default function IssueDetailPage() {
             </span>
             <button
               type="button"
-              onClick={attestation.refreshLocation}
+              onClick={() => void attestation.refreshLocation(false)}
               disabled={attestation.locationLoading}
               className="text-[#1A73E8] hover:underline font-semibold flex items-center gap-0.5 ml-1"
             >

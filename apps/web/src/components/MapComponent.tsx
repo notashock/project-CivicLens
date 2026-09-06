@@ -4,6 +4,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Issue } from '@/lib/api';
 import { MapBoundingBox } from '@/lib/issue-feed-model';
 import { Search, Navigation, RefreshCw, X, Crosshair, AlertCircle } from 'lucide-react';
+import { acquireUserLocation, GeolocationError } from '@/lib/location-service';
+import { LocationPermissionModal } from './LocationPermissionModal';
 
 interface MapComponentProps {
   issues: Issue[];
@@ -143,6 +145,7 @@ export const MapComponent: React.FC<MapComponentProps> = ({
   const [currentBounds, setCurrentBounds] = useState<MapBoundingBox | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false);
 
   // Initialize Map
   useEffect(() => {
@@ -262,102 +265,94 @@ export const MapComponent: React.FC<MapComponentProps> = ({
   }, [issues, selectedIssue, onSelectIssue]);
 
   // Handle "My Location" GPS Centering
-  const handleLocateMe = useCallback(() => {
-    if (!navigator.geolocation) {
-      setLocationError('Geolocation is not supported by your browser');
-      return;
-    }
-
+  const handleLocateMe = useCallback(async () => {
     setLocating(true);
     setLocationError(null);
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude, accuracy } = position.coords;
-        setLocating(false);
+    try {
+      const position = await acquireUserLocation();
+      const { latitude, longitude, accuracy } = position;
+      setLocating(false);
 
-        if (!mapInstanceRef.current) return;
+      if (!mapInstanceRef.current) return;
 
-        import('leaflet').then((L) => {
-          const map = mapInstanceRef.current;
+      const L = await import('leaflet');
+      const map = mapInstanceRef.current;
 
-          // Animate view to user position
-          map.flyTo([latitude, longitude], 15, { duration: 1.2 });
+      // Animate view to user position
+      map.flyTo([latitude, longitude], 15, { duration: 1.2 });
 
-          // Remove prior user location markers if present
-          if (userMarkerRef.current) userMarkerRef.current.remove();
-          if (userAccuracyCircleRef.current) userAccuracyCircleRef.current.remove();
+      // Remove prior user location markers if present
+      if (userMarkerRef.current) userMarkerRef.current.remove();
+      if (userAccuracyCircleRef.current) userAccuracyCircleRef.current.remove();
 
-          // Pulsating blue radar icon for user location
-          const userIcon = L.divIcon({
-            className: 'user-radar-pin',
-            html: `
-              <div style="position: relative; width: 24px; height: 24px;">
-                <div style="
-                  position: absolute;
-                  inset: 0;
-                  border-radius: 9999px;
-                  background: rgba(26, 115, 232, 0.35);
-                  animation: ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
-                "></div>
-                <div style="
-                  position: absolute;
-                  top: 3px;
-                  left: 3px;
-                  width: 18px;
-                  height: 18px;
-                  border-radius: 9999px;
-                  background: #1A73E8;
-                  border: 2.5px solid #FFFFFF;
-                  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-                "></div>
-              </div>
-            `,
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
-          });
+      // Pulsating blue radar icon for user location
+      const userIcon = L.divIcon({
+        className: 'user-radar-pin',
+        html: `
+          <div style="position: relative; width: 24px; height: 24px;">
+            <div style="
+              position: absolute;
+              inset: 0;
+              border-radius: 9999px;
+              background: rgba(26, 115, 232, 0.35);
+              animation: ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+            "></div>
+            <div style="
+              position: absolute;
+              top: 3px;
+              left: 3px;
+              width: 18px;
+              height: 18px;
+              border-radius: 9999px;
+              background: #1A73E8;
+              border: 2.5px solid #FFFFFF;
+              box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            "></div>
+          </div>
+        `,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      });
 
-          userMarkerRef.current = L.marker([latitude, longitude], {
-            icon: userIcon,
-            zIndexOffset: 1500,
-          }).addTo(map);
+      userMarkerRef.current = L.marker([latitude, longitude], {
+        icon: userIcon,
+        zIndexOffset: 1500,
+      }).addTo(map);
 
-          // Translucent accuracy circle
-          if (accuracy && accuracy < 2000) {
-            userAccuracyCircleRef.current = L.circle([latitude, longitude], {
-              radius: Math.max(accuracy, 80),
-              color: '#1A73E8',
-              fillColor: '#1A73E8',
-              fillOpacity: 0.08,
-              weight: 1,
-            }).addTo(map);
-          }
-
-          // Compute new bounds after flying
-          setTimeout(() => {
-            const b = map.getBounds();
-            const bbox: MapBoundingBox = {
-              north: b.getNorth(),
-              south: b.getSouth(),
-              east: b.getEast(),
-              west: b.getWest(),
-            };
-            onLocateUser?.(latitude, longitude, bbox);
-            setHasMoved(false);
-          }, 1300);
-        });
-      },
-      (err) => {
-        setLocating(false);
-        setLocationError(err.message || 'Unable to retrieve your location');
-        setTimeout(() => setLocationError(null), 4000);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 60000,
+      // Translucent accuracy circle
+      if (accuracy && accuracy < 2000) {
+        userAccuracyCircleRef.current = L.circle([latitude, longitude], {
+          radius: Math.max(accuracy, 80),
+          color: '#1A73E8',
+          fillColor: '#1A73E8',
+          fillOpacity: 0.08,
+          weight: 1,
+        }).addTo(map);
       }
-    );
+
+      // Compute new bounds after flying
+      setTimeout(() => {
+        const b = map.getBounds();
+        const bbox: MapBoundingBox = {
+          north: b.getNorth(),
+          south: b.getSouth(),
+          east: b.getEast(),
+          west: b.getWest(),
+        };
+        onLocateUser?.(latitude, longitude, bbox);
+        setHasMoved(false);
+      }, 1300);
+    } catch (err: any) {
+      setLocating(false);
+      if (err instanceof GeolocationError && err.isPermissionDenied) {
+        setLocationError('GPS permission denied. Tap to unblock.');
+        setIsPermissionModalOpen(true);
+      } else {
+        setLocationError(err.message || 'Unable to retrieve your location');
+      }
+      setTimeout(() => setLocationError(null), 8000);
+    }
   }, [onLocateUser]);
 
   return (
@@ -411,10 +406,15 @@ export const MapComponent: React.FC<MapComponentProps> = ({
       {/* Floating "My Location" GPS Button (Bottom Right) */}
       <div className="absolute bottom-6 right-3.5 sm:bottom-6 sm:right-4 z-[400] pointer-events-auto flex flex-col items-end space-y-1.5">
         {locationError && (
-          <div className="bg-[#FCE8E6] text-[#B3261E] text-[11px] font-medium py-1 px-2.5 rounded-xl border border-[#FAD2CF] shadow-sm flex items-center space-x-1 animate-in fade-in">
+          <button
+            type="button"
+            onClick={() => setIsPermissionModalOpen(true)}
+            className="bg-[#FCE8E6] hover:bg-[#FAD2CF] text-[#B3261E] text-[11px] font-medium py-1 px-2.5 rounded-xl border border-[#FAD2CF] shadow-sm flex items-center space-x-1 animate-in fade-in transition-colors cursor-pointer text-left"
+            title="Click to resolve location permissions"
+          >
             <AlertCircle className="w-3 h-3 shrink-0" />
             <span>{locationError}</span>
-          </div>
+          </button>
         )}
 
         <button
@@ -432,6 +432,17 @@ export const MapComponent: React.FC<MapComponentProps> = ({
           )}
         </button>
       </div>
+
+      {/* Geolocation Permission Resolution Modal */}
+      <LocationPermissionModal
+        isOpen={isPermissionModalOpen}
+        onClose={() => setIsPermissionModalOpen(false)}
+        onPermissionGranted={() => {
+          handleLocateMe();
+        }}
+        title="Enable Location for Live Map"
+        reason="CivicTrace uses your physical GPS location to center the map around community infrastructure hazards near you."
+      />
     </div>
   );
 };

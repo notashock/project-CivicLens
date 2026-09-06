@@ -7,7 +7,8 @@
   "module": "./dist/index.js",
   "scripts": {
     "build": "tsc",
-    "test": "node --test dist/tests/nullifier.test.js"
+    "pretest": "npm run build",
+    "test": "node --experimental-strip-types --test tests/nullifier.test.ts"
   },
   "keywords": ["anti-sybil", "webauthn", "nullifier", "zero-knowledge", "hmac"],
   "author": "CivicTrace Core Team",

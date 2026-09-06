@@ -7,7 +7,8 @@
   "module": "./dist/index.js",
   "scripts": {
     "build": "tsc",
-    "test": "node --test dist/tests/digipin.test.js"
+    "pretest": "npm run build",
+    "test": "node --experimental-strip-types --test tests/digipin.test.ts"
   },
   "keywords": ["digipin", "gis", "india", "geocoding", "spatial-indexing"],
   "author": "CivicTrace Core Team",

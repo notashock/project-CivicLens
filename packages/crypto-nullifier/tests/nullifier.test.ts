@@ -7,7 +7,7 @@ import {
   MemoryNullifierRegistry,
   getOrCreateDevicePrk,
   resetDevicePrkForTesting,
-} from '../src/index.js';
+} from '../dist/index.js';
 
 test('Deterministic Nullifier Generation for Issue', () => {
   const prk1 = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';

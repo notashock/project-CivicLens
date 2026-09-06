@@ -7,7 +7,7 @@ import {
   isWithinProximityRadius,
   getDigipinHierarchies,
   deriveIssueId,
-} from '../src/index.js';
+} from '../dist/index.js';
 
 test('DIGIPIN Encoding & Decoding Roundtrip - Bengaluru', () => {
   const lat = 12.9716;

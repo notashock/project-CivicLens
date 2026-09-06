@@ -40,6 +40,7 @@ export function LocationPermissionModal({
   const [permissionState, setPermissionState] = useState<LocationPermissionState>('prompt');
   const [isChecking, setIsChecking] = useState(false);
   const [showPrivacyDetails, setShowPrivacyDetails] = useState(false);
+  const [selectedTab, setSelectedTab] = useState<'android' | 'ios' | 'desktop'>('android');
   const [browserInfo, setBrowserInfo] = useState<{
     isIOS: boolean;
     isAndroid: boolean;
@@ -59,7 +60,11 @@ export function LocationPermissionModal({
   useEffect(() => {
     if (!isOpen) return;
 
-    setBrowserInfo(detectBrowserEnvironment());
+    const env = detectBrowserEnvironment();
+    setBrowserInfo(env);
+    if (env.isAndroid) setSelectedTab('android');
+    else if (env.isIOS) setSelectedTab('ios');
+    else setSelectedTab('desktop');
 
     // Check current state immediately
     checkLocationPermissionState().then((st) => {
@@ -181,97 +186,145 @@ export function LocationPermissionModal({
             </div>
           ) : null}
 
-          {/* Step-by-Step Instructions based on detected device */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
+          {/* Step-by-Step Instructions with Platform Selector */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-bold text-[#1F1F1F] uppercase tracking-wider">
-                How to Enable Location
+                How to Enable Location:
               </span>
-              <span className="text-[11px] font-semibold text-[#1A73E8] bg-[#E8F0FE] px-2 py-0.5 rounded-full flex items-center space-x-1">
-                {browserInfo.isIOS || browserInfo.isAndroid ? (
-                  <>
-                    <Smartphone className="w-3 h-3" />
-                    <span>Mobile Browser</span>
-                  </>
-                ) : (
-                  <>
-                    <Laptop className="w-3 h-3" />
-                    <span>Desktop Browser</span>
-                  </>
-                )}
-              </span>
+              {/* Platform Selector Tabs */}
+              <div className="inline-flex bg-[#F1F3F4] p-0.5 rounded-xl text-[11px] font-semibold text-[#5F6368]">
+                <button
+                  type="button"
+                  onClick={() => setSelectedTab('android')}
+                  className={`px-2 py-0.5 rounded-lg transition-all ${
+                    selectedTab === 'android'
+                      ? 'bg-white text-[#1A73E8] shadow-xs'
+                      : 'hover:text-[#1F1F1F]'
+                  }`}
+                >
+                  Android
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTab('ios')}
+                  className={`px-2 py-0.5 rounded-lg transition-all ${
+                    selectedTab === 'ios'
+                      ? 'bg-white text-[#1A73E8] shadow-xs'
+                      : 'hover:text-[#1F1F1F]'
+                  }`}
+                >
+                  iPhone
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTab('desktop')}
+                  className={`px-2 py-0.5 rounded-lg transition-all ${
+                    selectedTab === 'desktop'
+                      ? 'bg-white text-[#1A73E8] shadow-xs'
+                      : 'hover:text-[#1F1F1F]'
+                  }`}
+                >
+                  Desktop
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-2 text-xs bg-[#F8F9FA] p-3.5 rounded-2xl border border-[#E0E2EC]">
-              {browserInfo.isIOS ? (
-                // iOS / Safari Steps
+            <div className="space-y-2.5 text-xs bg-[#F8F9FA] p-3.5 rounded-2xl border border-[#E0E2EC]">
+              {selectedTab === 'android' ? (
+                // Android Chrome / Brave / Edge Steps
                 <>
-                  <div className="flex items-start space-x-2.5">
-                    <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0">
-                      1
+                  {/* Crucial OS-level check highlight */}
+                  <div className="bg-[#FEF7E0] border border-[#F29900]/30 rounded-xl p-2.5 text-[#B06000]">
+                    <strong className="text-[#874A00] flex items-center gap-1 mb-1">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      Phone App Permission (Crucial):
+                    </strong>
+                    <span className="leading-relaxed block">
+                      If Chrome never pops up, your phone OS blocked the Chrome app itself: Long-press your <strong>Chrome app icon</strong> &rarr; tap <strong>App info (ⓘ)</strong> &rarr; <strong>Permissions</strong> &rarr; <strong>Location</strong> &rarr; choose <strong className="text-[#0D652D]">"Allow only while using the app"</strong>.
                     </span>
-                    <p className="text-[#303030]">
-                      Tap the <strong className="text-[#1F1F1F]">aA</strong> or page settings icon in the Safari address bar.
-                    </p>
                   </div>
-                  <div className="flex items-start space-x-2.5">
-                    <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0">
-                      2
-                    </span>
-                    <p className="text-[#303030]">
-                      Tap <strong className="text-[#1F1F1F]">Website Settings</strong> $\to$ Select <strong className="text-[#1F1F1F]">Location</strong> $\to$ choose <strong className="text-[#0D652D]">Allow</strong>.
-                    </p>
-                  </div>
-                  <div className="flex items-start space-x-2.5">
-                    <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0">
-                      3
-                    </span>
-                    <p className="text-[#303030]">
-                      Tap <strong className="text-[#1A73E8]">Check Permission Again</strong> below.
-                    </p>
+
+                  <div className="space-y-2 pt-0.5">
+                    <div className="flex items-start space-x-2.5">
+                      <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0 text-[11px]">
+                        1
+                      </span>
+                      <p className="text-[#303030]">
+                        In Chrome, tap the <strong>tune or padlock icon</strong> (<SlidersHorizontal className="w-3.5 h-3.5 inline text-[#5F6368]" /> or <Lock className="w-3.5 h-3.5 inline text-[#5F6368]" />) to the left of the website URL.
+                      </p>
+                    </div>
+                    <div className="flex items-start space-x-2.5">
+                      <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0 text-[11px]">
+                        2
+                      </span>
+                      <p className="text-[#303030]">
+                        Tap <strong className="text-[#1F1F1F]">Permissions</strong> &rarr; <strong className="text-[#1F1F1F]">Location</strong> &rarr; switch to <strong className="text-[#0D652D]">Allow</strong> (or tap <strong>Reset permissions</strong>).
+                      </p>
+                    </div>
+                    <div className="flex items-start space-x-2.5">
+                      <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0 text-[11px]">
+                        3
+                      </span>
+                      <p className="text-[#303030]">
+                        Make sure your phone's main <strong>GPS / Location</strong> is turned on in the Android swipe-down menu, then tap below.
+                      </p>
+                    </div>
                   </div>
                 </>
-              ) : browserInfo.isAndroid ? (
-                // Android Chrome Steps
+              ) : selectedTab === 'ios' ? (
+                // iOS / Safari Steps
                 <>
-                  <div className="flex items-start space-x-2.5">
-                    <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0">
-                      1
+                  <div className="bg-[#FEF7E0] border border-[#F29900]/30 rounded-xl p-2.5 text-[#B06000]">
+                    <strong className="text-[#874A00] flex items-center gap-1 mb-1">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      iPhone Settings Check:
+                    </strong>
+                    <span className="leading-relaxed block">
+                      If Safari doesn't ask, check phone settings: Open iPhone <strong>Settings</strong> &rarr; <strong>Privacy & Security</strong> &rarr; <strong>Location Services</strong> &rarr; <strong>Safari Websites</strong> &rarr; select <strong className="text-[#0D652D]">"While Using the App"</strong>.
                     </span>
-                    <p className="text-[#303030]">
-                      Tap the <Lock className="w-3.5 h-3.5 inline text-[#5F6368]" /> or <SlidersHorizontal className="w-3.5 h-3.5 inline text-[#5F6368]" /> icon beside the website address.
-                    </p>
                   </div>
-                  <div className="flex items-start space-x-2.5">
-                    <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0">
-                      2
-                    </span>
-                    <p className="text-[#303030]">
-                      Tap <strong className="text-[#1F1F1F]">Permissions</strong> $\to$ <strong className="text-[#1F1F1F]">Location</strong> $\to$ switch to <strong className="text-[#0D652D]">Allow while using the app</strong>.
-                    </p>
-                  </div>
-                  <div className="flex items-start space-x-2.5">
-                    <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0">
-                      3
-                    </span>
-                    <p className="text-[#303030]">
-                      Tap the <strong className="text-[#1A73E8]">Refresh Location</strong> button below.
-                    </p>
+
+                  <div className="space-y-2 pt-0.5">
+                    <div className="flex items-start space-x-2.5">
+                      <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0 text-[11px]">
+                        1
+                      </span>
+                      <p className="text-[#303030]">
+                        In Safari, tap the <strong className="text-[#1F1F1F]">aA</strong> or page settings button on the left of the address bar.
+                      </p>
+                    </div>
+                    <div className="flex items-start space-x-2.5">
+                      <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0 text-[11px]">
+                        2
+                      </span>
+                      <p className="text-[#303030]">
+                        Tap <strong className="text-[#1F1F1F]">Website Settings</strong> &rarr; <strong className="text-[#1F1F1F]">Location</strong> &rarr; select <strong className="text-[#0D652D]">Allow</strong>.
+                      </p>
+                    </div>
+                    <div className="flex items-start space-x-2.5">
+                      <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0 text-[11px]">
+                        3
+                      </span>
+                      <p className="text-[#303030]">
+                        Tap <strong className="text-[#1A73E8]">Check Permission & Refresh</strong> below.
+                      </p>
+                    </div>
                   </div>
                 </>
               ) : (
                 // Desktop Chrome / Edge / Brave / Firefox Steps
-                <>
+                <div className="space-y-2">
                   <div className="flex items-start space-x-2.5">
-                    <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0">
+                    <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0 text-[11px]">
                       1
                     </span>
                     <p className="text-[#303030]">
-                      Look at the address bar at the top and click the <SlidersHorizontal className="w-3.5 h-3.5 inline text-[#1A73E8]" /> <strong>tune</strong> or <Lock className="w-3.5 h-3.5 inline text-[#1A73E8]" /> <strong>padlock</strong> icon on the left.
+                      Look at the address bar at the top and click the <strong>tune</strong> (<SlidersHorizontal className="w-3.5 h-3.5 inline text-[#1A73E8]" />) or <strong>padlock</strong> (<Lock className="w-3.5 h-3.5 inline text-[#1A73E8]" />) icon to the left of the URL.
                     </p>
                   </div>
                   <div className="flex items-start space-x-2.5">
-                    <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0">
+                    <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0 text-[11px]">
                       2
                     </span>
                     <p className="text-[#303030]">
@@ -279,14 +332,14 @@ export function LocationPermissionModal({
                     </p>
                   </div>
                   <div className="flex items-start space-x-2.5">
-                    <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0">
+                    <span className="font-bold text-[#1A73E8] bg-white w-5 h-5 rounded-full flex items-center justify-center border border-[#D3E3FD] shrink-0 text-[11px]">
                       3
                     </span>
                     <p className="text-[#303030]">
                       Click <strong className="text-[#1A73E8]">Check Permission & Refresh</strong> below.
                     </p>
                   </div>
-                </>
+                </div>
               )}
             </div>
           </div>

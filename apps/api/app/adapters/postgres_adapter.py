@@ -47,7 +47,8 @@ class PostgresDatabaseAdapter(DatabaseAdapter):
                 self.database_url,
                 min_size=pool_min,
                 max_size=pool_max,
-                command_timeout=30
+                command_timeout=30,
+                statement_cache_size=0,
             )
             logger.info(f"PostgreSQL connection pool established successfully (min={pool_min}, max={pool_max}).")
         except Exception as e:
@@ -70,10 +71,15 @@ class PostgresDatabaseAdapter(DatabaseAdapter):
 
         parsed = urlparse(self.database_url)
         target_db = parsed.path.lstrip("/") or "civictrace"
+        hostname = (parsed.hostname or "").lower()
+
+        # Managed cloud databases (Supabase, Neon) already exist as 'postgres' and disallow CREATE DATABASE
+        if target_db == "postgres" or any(h in hostname for h in ("supabase.co", "supabase.com", "neon.tech", "pooler.")):
+            return
 
         # Try connecting directly first
         try:
-            conn = await asyncpg.connect(self.database_url, timeout=5)
+            conn = await asyncpg.connect(self.database_url, timeout=5, statement_cache_size=0)
             await conn.close()
             return
         except asyncpg.InvalidCatalogNameError:
@@ -211,7 +217,7 @@ class PostgresDatabaseAdapter(DatabaseAdapter):
         import asyncpg
         while True:
             try:
-                self._listener_conn = await asyncpg.connect(self.database_url)
+                self._listener_conn = await asyncpg.connect(self.database_url, statement_cache_size=0)
                 await self._listener_conn.add_listener("civic_events", self._handle_pg_notify)
                 logger.info("Subscribed to PostgreSQL 'civic_events' channel.")
                 while True:

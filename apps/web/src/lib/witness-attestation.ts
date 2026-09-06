@@ -12,6 +12,7 @@ import {
   subscribeToPermissionChanges,
   GeolocationError,
 } from './location-service';
+import { useToast } from '@/context/ToastContext';
 
 export interface ToastFeedback {
   message: string;
@@ -86,12 +87,15 @@ export function useWitnessAttestation({
   const [isSubmittingReaction, setIsSubmittingReaction] = useState<boolean>(false);
   const [actionFeedback, setActionFeedback] = useState<ToastFeedback | null>(null);
 
-  const showToast = useCallback((message: string, type: 'success' | 'warning' | 'error') => {
-    setActionFeedback({ message, type });
-    setTimeout(() => {
-      setActionFeedback(null);
-    }, 4500);
-  }, []);
+  const { showToast: contextShowToast } = useToast();
+
+  const showToast = useCallback(
+    (message: string, type: 'success' | 'warning' | 'error') => {
+      setActionFeedback({ message, type });
+      contextShowToast(message, type);
+    },
+    [contextShowToast]
+  );
 
   const refreshLocation = useCallback(
     async (openModalIfDenied = true) => {

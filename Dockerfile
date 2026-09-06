@@ -83,7 +83,8 @@ COPY apps/api /app/apps/api
 COPY scripts /app/scripts
 
 # Fix execution permissions and ensure Unix LF endings
-RUN chmod +x /app/scripts/docker-entrypoint.sh /app/scripts/docker-healthcheck.sh
+RUN sed -i 's/\r$//' /app/scripts/docker-entrypoint.sh /app/scripts/docker-healthcheck.sh && \
+    chmod +x /app/scripts/docker-entrypoint.sh /app/scripts/docker-healthcheck.sh
 
 # Expose Next.js Web (3000) and FastAPI Backend (8000)
 EXPOSE 3000 8000

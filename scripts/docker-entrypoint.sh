@@ -43,7 +43,7 @@ cleanup() {
     exit 0
 }
 
-trap cleanup SIGTERM SIGINT SIGHUP
+trap cleanup TERM INT HUP
 
 # 1. Start FastAPI Backend in background (constrained worker & concurrency for 512MB limit)
 echo "[SUPERVISOR] Starting FastAPI Backend on 0.0.0.0:${API_PORT} (${API_WORKERS} worker, max 50 concurrent)..."
@@ -77,6 +77,8 @@ fi
 echo "[SUPERVISOR] Starting Next.js Frontend on 0.0.0.0:${WEB_PORT} (V8 max heap: 192MB)..."
 if [ -f "/app/apps/web/.next/standalone/apps/web/server.js" ]; then
     PORT="$WEB_PORT" node /app/apps/web/.next/standalone/apps/web/server.js &
+elif [ -f "/app/apps/web/.next/standalone/server.js" ]; then
+    PORT="$WEB_PORT" node /app/apps/web/.next/standalone/server.js &
 elif [ -f "/app/.next/standalone/apps/web/server.js" ]; then
     PORT="$WEB_PORT" node /app/.next/standalone/apps/web/server.js &
 elif [ -f "/app/node_modules/.bin/next" ]; then

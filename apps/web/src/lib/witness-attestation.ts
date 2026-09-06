@@ -6,6 +6,13 @@ import { computeNullifierHash, getOrCreateDevicePrk, ActionType } from '@civictr
 import { calculateHaversineDistanceMeters } from '@civictrace/digipin';
 import { checkTextNeutrality } from '@civictrace/sanitization-worker';
 
+import {
+  acquireUserLocation,
+  checkLocationPermissionState,
+  subscribeToPermissionChanges,
+  GeolocationError,
+} from './location-service';
+
 export interface ToastFeedback {
   message: string;
   type: 'success' | 'warning' | 'error';
@@ -25,8 +32,11 @@ export interface UseWitnessAttestationReturn {
   isNearby: boolean;
   locationLoading: boolean;
   locationError: string | null;
+  isPermissionDenied: boolean;
+  showPermissionModal: boolean;
+  setShowPermissionModal: (show: boolean) => void;
   requestLocation: () => void;
-  refreshLocation: () => Promise<void>;
+  refreshLocation: (openModalIfDenied?: boolean) => Promise<void>;
 
   // Stance & Voting State
   hasVotedOnThisIssue: boolean;
@@ -66,6 +76,8 @@ export function useWitnessAttestation({
   const [userLon, setUserLon] = useState<number | null>(null);
   const [locationLoading, setLocationLoading] = useState<boolean>(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [isPermissionDenied, setIsPermissionDenied] = useState<boolean>(false);
+  const [showPermissionModal, setShowPermissionModal] = useState<boolean>(false);
 
   // Stance & Voting state
   const [hasVotedOnThisIssue, setHasVotedOnThisIssue] = useState<boolean>(false);
@@ -81,60 +93,40 @@ export function useWitnessAttestation({
     }, 4500);
   }, []);
 
-  const requestLocation = useCallback(() => {
-    if (typeof window !== 'undefined' && navigator.geolocation) {
+  const refreshLocation = useCallback(
+    async (openModalIfDenied = true) => {
+      if (typeof window === 'undefined' || !navigator.geolocation) {
+        showToast('Geolocation is not supported by your browser.', 'error');
+        return;
+      }
+
       setLocationLoading(true);
       setLocationError(null);
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setUserLat(pos.coords.latitude);
-          setUserLon(pos.coords.longitude);
-          setLocationLoading(false);
-        },
-        (err) => {
-          console.info('GPS unavailable or denied:', err);
-          setLocationLoading(false);
-          setLocationError('GPS location unavailable');
-        },
-        { enableHighAccuracy: true, timeout: 8000 }
-      );
-    }
-  }, []);
 
-  const refreshLocation = useCallback(async () => {
-    if (typeof window === 'undefined' || !navigator.geolocation) {
-      showToast('Geolocation is not supported by your browser.', 'error');
-      return;
-    }
-
-    setLocationLoading(true);
-    setLocationError(null);
-
-    // Check GPS permissions if Permissions API is supported
-    if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
-      try {
-        const permissionStatus = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
-        if (permissionStatus.state === 'denied') {
-          setLocationLoading(false);
-          setLocationError('GPS permission denied in browser settings.');
-          showToast('GPS permission is blocked. Please allow location access in your browser settings to verify.', 'warning');
-          return;
-        }
-      } catch {
-        // Permissions API error or unsupported in some environments, proceed to direct acquisition
-      }
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lon = pos.coords.longitude;
-        setUserLat(lat);
-        setUserLon(lon);
+      // 1. Check GPS permissions first
+      const permissionState = await checkLocationPermissionState();
+      if (permissionState === 'denied') {
         setLocationLoading(false);
+        setIsPermissionDenied(true);
+        setLocationError('GPS permission denied in browser settings.');
+        if (openModalIfDenied) {
+          setShowPermissionModal(true);
+        }
+        showToast('GPS access is blocked. Tap the GPS badge to view how to enable.', 'warning');
+        return;
+      }
+
+      // 2. Resilient multi-stage acquisition (GPS -> WiFi/coarse fallback)
+      try {
+        const coords = await acquireUserLocation();
+        setUserLat(coords.latitude);
+        setUserLon(coords.longitude);
+        setIsPermissionDenied(false);
+        setLocationLoading(false);
+        setLocationError(null);
 
         if (issue) {
-          const dist = calculateHaversineDistanceMeters(lat, lon, issue.lat, issue.lon);
+          const dist = calculateHaversineDistanceMeters(coords.latitude, coords.longitude, issue.lat, issue.lon);
           if (dist <= PROXIMITY_RADIUS_METERS) {
             showToast(`GPS Refreshed: Within 500m (~${Math.round(dist)}m). Eyewitness voting unlocked!`, 'success');
           } else {
@@ -143,29 +135,50 @@ export function useWitnessAttestation({
         } else {
           showToast('GPS coordinates successfully refreshed.', 'success');
         }
-      },
-      (err) => {
-        console.warn('GPS refresh error:', err);
+      } catch (err: any) {
+        console.warn('GPS acquisition error:', err);
         setLocationLoading(false);
-        if (err.code === err.PERMISSION_DENIED) {
+        if (err instanceof GeolocationError && err.isPermissionDenied) {
+          setIsPermissionDenied(true);
           setLocationError('Location permission denied');
-          showToast('GPS permission denied. Please grant location access in browser settings.', 'error');
-        } else if (err.code === err.TIMEOUT) {
+          if (openModalIfDenied) {
+            setShowPermissionModal(true);
+          }
+          showToast('GPS permission was denied. Tap to see how to enable.', 'error');
+        } else if (err instanceof GeolocationError && err.isTimeout) {
           setLocationError('GPS request timed out');
           showToast('GPS request timed out. Please try again.', 'error');
         } else {
           setLocationError('Unable to retrieve GPS fix');
-          showToast('Unable to obtain high-accuracy GPS fix. Please ensure location services are enabled.', 'error');
+          showToast('Unable to obtain GPS fix. Please ensure location services are enabled.', 'error');
         }
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-  }, [issue, showToast]);
+      }
+    },
+    [issue, showToast]
+  );
 
-  // Request location on mount
+  const requestLocation = useCallback(() => {
+    refreshLocation(false);
+  }, [refreshLocation]);
+
+  // Sync location on mount and subscribe to browser permission changes
   useEffect(() => {
-    requestLocation();
-  }, [requestLocation]);
+    checkLocationPermissionState().then((st) => {
+      setIsPermissionDenied(st === 'denied');
+      if (st === 'granted') {
+        refreshLocation(false);
+      }
+    });
+
+    const unsubscribe = subscribeToPermissionChanges((st) => {
+      setIsPermissionDenied(st === 'denied');
+      if (st === 'granted') {
+        refreshLocation(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [refreshLocation]);
 
   // Load device's previous vote from local storage for this issue
   useEffect(() => {
@@ -212,8 +225,13 @@ export function useWitnessAttestation({
           'warning'
         );
       } else {
-        showToast('Please enable device location to verify you are within 500m of the issue.', 'warning');
-        requestLocation();
+        if (isPermissionDenied) {
+          setShowPermissionModal(true);
+          showToast('Location permission is required to verify physical proximity (<500m).', 'warning');
+        } else {
+          showToast('Checking GPS location for 500m eyewitness verification...', 'warning');
+          refreshLocation(true);
+        }
       }
       return;
     }
@@ -341,6 +359,9 @@ export function useWitnessAttestation({
     isNearby,
     locationLoading,
     locationError,
+    isPermissionDenied,
+    showPermissionModal,
+    setShowPermissionModal,
     requestLocation,
     refreshLocation,
     hasVotedOnThisIssue,

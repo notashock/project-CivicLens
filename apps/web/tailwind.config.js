@@ -8,41 +8,68 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        paper: {
-          50: '#FFFFFF',
-          100: '#FBF9F5',
-          200: '#F5F1EA',
-          300: '#EAE4D9',
+        m3: {
+          primary: '#1A73E8',
+          'on-primary': '#FFFFFF',
+          'primary-container': '#E8F0FE',
+          'on-primary-container': '#041E49',
+
+          secondary: '#5F6368',
+          'on-secondary': '#FFFFFF',
+          'secondary-container': '#F1F3F4',
+          'on-secondary-container': '#202124',
+
+          tertiary: '#0F9D58',
+          'on-tertiary': '#FFFFFF',
+          'tertiary-container': '#E6F4EA',
+          'on-tertiary-container': '#0D652D',
+
+          surface: '#FFFFFF',
+          'surface-dim': '#DED8E1',
+          'surface-bright': '#FEF7FF',
+          'surface-container-lowest': '#FFFFFF',
+          'surface-container-low': '#F8F9FA',
+          'surface-container': '#F1F3F4',
+          'surface-container-high': '#E9EEF6',
+          'surface-container-highest': '#E1E3E1',
+
+          'on-surface': '#1F1F1F',
+          'on-surface-variant': '#444746',
+          outline: '#747775',
+          'outline-variant': '#C4C7C5',
+
+          error: '#BA1A1A',
+          'on-error': '#FFFFFF',
+          'error-container': '#FFDAD6',
+          'on-error-container': '#410002',
+
+          // Status colors
+          'status-verified': '#0F9D58',
+          'status-verified-container': '#E6F4EA',
+          'status-pending': '#EA8600',
+          'status-pending-container': '#FEF7E0',
+          'status-disputed': '#D93025',
+          'status-disputed-container': '#FCE8E6',
         },
-        ink: {
-          DEFAULT: '#18181B',
-          muted: '#52525B',
-          light: '#71717A',
-        },
-        civic: {
-          sage: '#DCFCE7',
-          sageDark: '#14532D',
-          butter: '#FEF3C7',
-          butterDark: '#78350F',
-          sky: '#E0F2FE',
-          skyDark: '#075985',
-          coral: '#FFE4E6',
-          coralDark: '#881337',
-          lavender: '#F3E8FF',
-          lavenderDark: '#581C87',
-          apricot: '#FFEDD5',
-          apricotDark: '#7C2D12',
-        }
       },
       boxShadow: {
-        'brutal-sm': '2px 2px 0px 0px #18181B',
-        'brutal': '3px 3px 0px 0px #18181B',
-        'brutal-md': '4px 4px 0px 0px #18181B',
-        'brutal-lg': '6px 6px 0px 0px #18181B',
+        'm3-elevation-1': '0px 1px 3px 1px rgba(0, 0, 0, 0.15), 0px 1px 2px 0px rgba(0, 0, 0, 0.30)',
+        'm3-elevation-2': '0px 2px 6px 2px rgba(0, 0, 0, 0.15), 0px 1px 2px 0px rgba(0, 0, 0, 0.30)',
+        'm3-elevation-3': '0px 1px 3px 0px rgba(0, 0, 0, 0.30), 0px 4px 8px 3px rgba(0, 0, 0, 0.15)',
+        'm3-elevation-4': '0px 2px 3px 0px rgba(0, 0, 0, 0.30), 0px 6px 10px 4px rgba(0, 0, 0, 0.15)',
+        'm3-elevation-5': '0px 4px 4px 0px rgba(0, 0, 0, 0.30), 0px 8px 12px 6px rgba(0, 0, 0, 0.15)',
+      },
+      borderRadius: {
+        'm3-xs': '4px',
+        'm3-sm': '8px',
+        'm3-md': '12px',
+        'm3-lg': '16px',
+        'm3-xl': '28px',
+        'm3-full': '9999px',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        sans: ['Inter', 'Roboto', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'Roboto Mono', 'monospace'],
       },
     },
   },

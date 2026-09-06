@@ -2,84 +2,227 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Roboto+Mono:wght@400;500;700&display=swap');
 
 :root {
-  --background: #FBF9F5;
-  --foreground: #18181B;
+  --m3-surface: #FFFFFF;
+  --m3-surface-container-low: #F8F9FA;
+  --m3-surface-container: #F1F3F4;
+  --m3-surface-container-high: #E9EEF6;
+  --m3-on-surface: #1F1F1F;
+  --m3-outline: #747775;
+  --m3-outline-variant: #C4C7C5;
+  --m3-primary: #1A73E8;
+  --m3-primary-container: #E8F0FE;
+  --m3-on-primary-container: #041E49;
 }
 
 body {
-  color: var(--foreground);
-  background-color: var(--background);
+  color: var(--m3-on-surface);
+  background-color: var(--m3-surface-container-low);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Soft Refined Editorial Classes */
-.editorial-card {
+/* Material 3 Card Systems */
+.m3-card {
   background-color: #FFFFFF;
-  border: 1px solid #E4E4E7;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
-  border-radius: 14px;
+  border: 1px solid #E0E2EC;
+  border-radius: 16px;
+  box-shadow: 0px 1px 3px 1px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
-.editorial-card-subtle {
-  background-color: #FAFAFA;
-  border: 1px solid #E4E4E7;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
-  border-radius: 12px;
+.m3-card:hover {
+  box-shadow: 0px 3px 6px 2px rgba(0, 0, 0, 0.08);
+  border-color: #D3E3FD;
 }
 
-.editorial-btn {
-  border: 1.5px solid #18181B;
+.m3-card-tonal {
+  background-color: #F8F9FA;
+  border: 1px solid #E9EEF6;
+  border-radius: 16px;
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.m3-card-elevated {
+  background-color: #FFFFFF;
+  border-radius: 20px;
+  box-shadow: 0px 1px 3px 1px rgba(0, 0, 0, 0.12), 0px 1px 2px 0px rgba(0, 0, 0, 0.24);
+  transition: box-shadow 0.2s ease;
+}
+
+.m3-card-elevated:hover {
+  box-shadow: 0px 2px 6px 2px rgba(0, 0, 0, 0.14), 0px 1px 2px 0px rgba(0, 0, 0, 0.28);
+}
+
+/* Material 3 Button Systems */
+.m3-btn-primary {
+  background-color: #1A73E8;
+  color: #FFFFFF;
+  font-weight: 500;
+  border-radius: 9999px;
+  padding: 8px 18px;
+  font-size: 0.875rem;
+  box-shadow: 0px 1px 2px 0px rgba(26, 115, 232, 0.3);
+  transition: all 0.15s cubic-bezier(0.2, 0, 0, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.m3-btn-primary:hover {
+  background-color: #1557B0;
+  box-shadow: 0px 2px 4px 1px rgba(26, 115, 232, 0.35);
+}
+
+.m3-btn-primary:active {
+  transform: scale(0.98);
+}
+
+.m3-btn-tonal {
+  background-color: #E8F0FE;
+  color: #041E49;
   font-weight: 600;
-  box-shadow: 2px 2px 0px 0px #18181B;
-  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1);
-  border-radius: 10px;
-  touch-action: manipulation;
+  border-radius: 9999px;
+  padding: 8px 18px;
+  font-size: 0.875rem;
+  transition: all 0.15s cubic-bezier(0.2, 0, 0, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
-.editorial-btn:hover {
-  transform: translate(-0.5px, -0.5px);
-  box-shadow: 2.5px 2.5px 0px 0px #18181B;
+.m3-btn-tonal:hover {
+  background-color: #D3E3FD;
 }
 
-.editorial-btn:active {
-  transform: translate(1px, 1px);
-  box-shadow: 1px 1px 0px 0px #18181B;
+.m3-btn-tonal:active {
+  transform: scale(0.98);
 }
 
-.stamp-badge {
-  border: 1px solid #18181B;
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 700;
-  font-size: 11px;
+.m3-btn-outlined {
+  background-color: transparent;
+  color: #1F1F1F;
+  border: 1px solid #747775;
+  font-weight: 500;
+  border-radius: 9999px;
+  padding: 8px 18px;
+  font-size: 0.875rem;
+  transition: all 0.15s cubic-bezier(0.2, 0, 0, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.m3-btn-outlined:hover {
+  background-color: #F8F9FA;
+  border-color: #1F1F1F;
+}
+
+.m3-btn-outlined:active {
+  transform: scale(0.98);
+}
+
+/* Material 3 Chips */
+.m3-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background-color: #FFFFFF;
+  border: 1px solid #C4C7C5;
+  color: #444746;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.m3-chip:hover {
+  background-color: #F1F3F4;
+  color: #1F1F1F;
+}
+
+.m3-chip-selected {
+  background-color: #E8F0FE;
+  border-color: #1A73E8;
+  color: #041E49;
+  font-weight: 600;
+}
+
+.m3-chip-selected:hover {
+  background-color: #D3E3FD;
+}
+
+/* Material 3 Floating Action Button (FAB) */
+.m3-fab {
+  background-color: #D3E3FD;
+  color: #041E49;
+  border-radius: 16px;
+  box-shadow: 0px 4px 8px 3px rgba(0, 0, 0, 0.15), 0px 1px 3px 0px rgba(0, 0, 0, 0.30);
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.m3-fab:hover {
+  box-shadow: 0px 6px 10px 4px rgba(0, 0, 0, 0.15), 0px 2px 3px 0px rgba(0, 0, 0, 0.30);
+  background-color: #C2E7FF;
+}
+
+.m3-fab:active {
+  transform: scale(0.96);
+}
+
+/* M3 Outlined Text Field */
+.m3-input {
+  background-color: #FFFFFF;
+  border: 1px solid #747775;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.875rem;
+  color: #1F1F1F;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.m3-input:hover {
+  border-color: #1F1F1F;
+}
+
+.m3-input:focus {
+  outline: none;
+  border-color: #1A73E8;
+  box-shadow: 0 0 0 1px #1A73E8;
+}
+
+/* M3 Modal Bottom Sheet */
+.m3-bottom-sheet {
+  background-color: #FFFFFF;
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+  box-shadow: 0px -2px 12px 0px rgba(0, 0, 0, 0.15);
+}
+
+/* Semantic Badges */
+.m3-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
   padding: 2px 8px;
   border-radius: 6px;
   display: inline-flex;
   align-items: center;
-  white-space: nowrap;
+  gap: 4px;
 }
 
-.editorial-input {
-  background-color: #FFFFFF;
-  border: 1.5px solid #D4D4D8;
-  padding: 8px 14px;
-  font-weight: 500;
-  border-radius: 10px;
-  color: #18181B;
-  transition: all 0.15s ease;
-}
-
-.editorial-input:focus {
-  outline: none;
-  border-color: #18181B;
-  box-shadow: 0 0 0 1px #18181B;
-}
-
-/* Mobile Safe Areas */
+/* Safe Area Insets & Scrollbars */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 16px);
 }
@@ -88,26 +231,32 @@ body {
   padding-top: env(safe-area-inset-top, 16px);
 }
 
-/* Hide scrollbar for Chrome, Safari and Opera */
+/* Universal Scrollbar Hiding Across Entire Application */
+html,
+body,
+* {
+  -ms-overflow-style: none !important; /* IE and Edge */
+  scrollbar-width: none !important; /* Firefox */
+}
+
+*::-webkit-scrollbar,
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
 .no-scrollbar::-webkit-scrollbar {
-  display: none;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
-/* Hide scrollbar for IE, Edge and Firefox */
 .no-scrollbar {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }
 
-/* Custom Scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #F5F1EA;
-}
-::-webkit-scrollbar-thumb {
-  background: #18181B;
-  border-radius: 9999px;
-}
+

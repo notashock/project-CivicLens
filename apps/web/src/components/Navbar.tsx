@@ -2,209 +2,409 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   ShieldCheck,
-  PlusCircle,
+  Plus,
   Radio,
-  Menu,
-  X,
   MapPin,
   Lock,
   Layers,
   Info,
-  ExternalLink
+  ExternalLink,
+  X,
+  FileCheck2,
+  Search,
+  Filter,
+  ChevronDown,
+  ArrowLeft,
+  Navigation,
+  RotateCw,
+  Share2,
+  Check,
+  Map,
+  ListFilter
 } from 'lucide-react';
+import { useSearchFilter } from '@/context/SearchFilterContext';
+import { useActiveIssue } from '@/context/ActiveIssueContext';
+import { ISSUE_CATEGORIES } from '@/lib/issue-feed-model';
 
 export const Navbar: React.FC = () => {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const {
+    search,
+    setSearch,
+    category,
+    setCategory,
+    clearSearch,
+    viewMode,
+    setViewMode,
+  } = useSearchFilter();
+  const { activeIssue, headerActions } = useActiveIssue();
+  const isIssuePage = pathname.startsWith('/issue/');
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setShowInfoModal(false);
-        setMobileMenuOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  const handleSearchChange = (val: string) => {
+    setSearch(val);
+    if (pathname !== '/') {
+      router.push('/');
+    }
+  };
+
+  const handleCategoryChange = (val: string) => {
+    setCategory(val);
+    if (pathname !== '/') {
+      router.push('/');
+    }
+  };
+
   return (
     <>
-      <header className="sticky top-0 z-[1100] w-full bg-[#FDFCF9] border-b-2 border-zinc-900 px-3 sm:px-6 lg:px-8 py-2 sm:py-3 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
-          {/* Brand Logo */}
-          <Link href="/" className="flex items-center space-x-2 sm:space-x-3 group min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-lg bg-[#FEF3C7] border-2 border-zinc-900 flex items-center justify-center shadow-[2px_2px_0px_0px_#18181b] group-hover:-translate-y-0.5 group-active:translate-y-0.5 transition-all">
-              <Radio className="w-4 h-4 text-zinc-900" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center space-x-1.5 sm:space-x-2">
-                <span className="font-black text-base sm:text-xl tracking-tight text-zinc-900">
-                  Civic<span className="underline decoration-wavy decoration-[#FDE68A] decoration-2 underline-offset-4">Trace</span>
-                </span>
-                <span className="text-[9px] sm:text-[10px] font-mono font-bold bg-zinc-100 text-zinc-700 px-1 sm:px-1.5 py-0.5 rounded border border-zinc-300">
-                  DIGIPIN
-                </span>
-              </div>
-              <p className="text-[11px] font-medium text-zinc-500 hidden sm:block truncate">
-                Anonymous Community Ledger
-              </p>
-            </div>
-          </Link>
-
-          {/* Action Badges and Navigation */}
-          <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
-            {/* Desktop Navigation Links */}
-            <nav className="hidden md:flex items-center space-x-1 mr-1">
-              <Link
-                href="/"
-                className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
-                  pathname === '/'
-                    ? 'bg-zinc-900 text-white'
-                    : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-                }`}
+      <header className="sticky top-0 z-[1100] w-full bg-white/95 backdrop-blur-md shadow-[0px_1px_3px_0px_rgba(0,0,0,0.06)]">
+        <div className="px-3.5 sm:px-6 lg:px-8 py-2 sm:py-2.5">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
+          {/* Dynamic Issue Header or Brand Identity */}
+          {isIssuePage ? (
+            <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1 py-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined' && window.history.length > 1) {
+                    router.back();
+                  } else {
+                    router.push('/');
+                  }
+                }}
+                className="flex items-center space-x-1 sm:space-x-1.5 text-[#1F1F1F] hover:text-[#1A73E8] py-1.5 px-2 sm:px-2.5 rounded-xl hover:bg-[#F1F3F4] transition-colors group shrink-0"
+                aria-label="Back to Issues"
+                title="Back to Feed"
               >
-                Map & Feed
-              </Link>
-            </nav>
+                <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 text-[#1F1F1F] group-hover:text-[#1A73E8] transition-colors" />
+                <span className="font-bold text-xs sm:text-sm hidden xs:inline">Back</span>
+              </button>
 
-            {/* Protocol Quick Action (Directly accessible on both Mobile and Desktop) */}
-            <button
-              onClick={() => setShowInfoModal(true)}
-              className="editorial-btn flex items-center space-x-1 sm:space-x-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white hover:bg-zinc-100 text-zinc-800 text-xs font-bold border-2 border-zinc-900 shadow-[2px_2px_0px_0px_#18181b]"
-              title="Privacy & Cryptographic Protocol"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-              <span className="hidden xs:inline sm:inline">Protocol</span>
-            </button>
+              <div className="h-4 w-px bg-[#E0E2EC] shrink-0" />
 
-            {/* Single Primary Report CTA */}
-            <Link
-              href="/report"
-              className="editorial-btn flex items-center space-x-1.5 sm:space-x-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-[#FEF3C7] hover:bg-[#FDE68A] text-amber-950 text-xs sm:text-sm font-bold shadow-[2px_2px_0px_0px_#18181b]"
-            >
-              <PlusCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-950 stroke-[2.5]" />
-              <span>Report Issue</span>
+              {activeIssue ? (
+                <div className="flex items-center space-x-1.5 sm:space-x-2 min-w-0 flex-1">
+                  <span className="font-mono text-[11px] sm:text-xs font-bold text-[#1F1F1F] bg-[#F1F3F4] px-2 py-0.5 rounded-lg shrink-0 border border-[#E0E2EC]">
+                    {activeIssue.digipin_code || activeIssue.id.slice(0, 10)}
+                  </span>
+                  <span className="text-xs sm:text-sm font-semibold text-[#1F1F1F] truncate hidden sm:inline max-w-[200px] md:max-w-xs lg:max-w-md">
+                    {activeIssue.description_neutral}
+                  </span>
+                  {activeIssue.statusPresentation && (
+                    <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0 ${activeIssue.statusPresentation.badgeClass}`}>
+                      {activeIssue.statusPresentation.label}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center space-x-1.5 text-xs text-[#5F6368]">
+                  <span className="animate-pulse font-medium">Issue Record</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link href="/" className="flex items-center space-x-2.5 group min-w-0 shrink-0">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-xl bg-[#E8F0FE] text-[#1A73E8] flex items-center justify-center transition-transform group-hover:scale-105">
+                <Radio className="w-4 h-4 sm:w-5 sm:h-5 text-[#1A73E8]" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center space-x-1.5">
+                  <span className="font-bold text-base sm:text-xl tracking-tight text-[#1F1F1F]">
+                    Civic<span className="text-[#1A73E8]">Trace</span>
+                  </span>
+                  {/* <span className="hidden lg:inline-flex text-[10px] font-semibold bg-[#F1F3F4] text-[#444746] px-2 py-0.5 rounded-full border border-[#E0E2EC]">
+                    DIGIPIN
+                  </span> */}
+                </div>
+                <p className="text-[11px] text-[#5F6368] hidden lg:block truncate font-normal">
+                  Anonymous Civic Reports
+                </p>
+              </div>
             </Link>
+          )}
 
-            {/* Mobile Navigation Drawer Toggle */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-1.5 sm:p-2 rounded-lg border-2 border-zinc-900 bg-white text-zinc-900 shadow-[2px_2px_0px_0px_#18181b] active:translate-y-0.5"
-              aria-label="Toggle Navigation Menu"
-            >
-              {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-            </button>
-          </div>
+          {/* Desktop Search Bar & Category Filter Dropdown (Hidden on Mobile & Tablet < 1024px) */}
+          {!isIssuePage && (
+            <div className="hidden lg:flex items-center space-x-2 flex-1 max-w-lg lg:max-w-xl mx-2 lg:mx-4">
+              {/* Search Input */}
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#747775]" />
+                <input
+                  type="text"
+                  placeholder="Search DIGIPIN or keyword..."
+                  value={search}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  className="w-full pl-9 pr-8 py-1.5 text-xs bg-[#F8F9FA] hover:bg-[#F1F3F4] border border-[#C4C7C5] focus:border-[#1A73E8] focus:bg-white rounded-full focus:outline-none focus:ring-1 focus:ring-[#1A73E8] text-[#1F1F1F] placeholder-[#747775] transition-all"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={clearSearch}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#747775] hover:text-[#1F1F1F]"
+                    aria-label="Clear search"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Filter Dropdown right beside Search Bar */}
+              <div className="relative shrink-0">
+                <select
+                  value={category}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
+                  className="appearance-none pl-8 pr-8 py-1.5 text-xs font-semibold bg-[#F8F9FA] hover:bg-[#F1F3F4] text-[#1F1F1F] border border-[#C4C7C5] focus:border-[#1A73E8] rounded-full focus:outline-none focus:ring-1 focus:ring-[#1A73E8] cursor-pointer transition-all"
+                >
+                  {ISSUE_CATEGORIES.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.label}
+                    </option>
+                  ))}
+                </select>
+                <Filter className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#5F6368] pointer-events-none" />
+                <ChevronDown className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-[#5F6368] pointer-events-none" />
+              </div>
+            </div>
+          )}
+
+          {/* Action Hub: Replaced with Location & Share on Issue Page */}
+          {isIssuePage ? (
+            <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
+              {headerActions && (
+                <>
+                  {/* GPS Proximity / Refresh Button */}
+                  <button
+                    type="button"
+                    onClick={headerActions.refreshLocation}
+                    disabled={headerActions.locationLoading}
+                    className={`text-[10px] sm:text-xs font-semibold px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full border transition-all flex items-center space-x-1.5 active:scale-95 shadow-2xs ${
+                      headerActions.isNearby
+                        ? 'bg-[#E6F4EA] text-[#0D652D] border-[#CEEAD6] hover:bg-[#D7EEDF]'
+                        : headerActions.userDistanceMeters !== null
+                        ? 'bg-[#F8F9FA] text-[#5F6368] border-[#E0E2EC] hover:bg-[#E9EEF6] hover:text-[#1A73E8]'
+                        : 'bg-[#E8F0FE] text-[#1A73E8] border-[#D3E3FD] hover:bg-[#D3E3FD]'
+                    }`}
+                    title="Click to check GPS permission and refresh your location"
+                    aria-label="Refresh GPS location"
+                  >
+                    {headerActions.locationLoading ? (
+                      <Radio className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-spin text-[#1A73E8]" />
+                    ) : (
+                      <Navigation
+                        className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${
+                          headerActions.isNearby ? 'text-[#0F9D58]' : ''
+                        }`}
+                      />
+                    )}
+                    <span>
+                      {headerActions.locationLoading
+                        ? 'Refreshing...'
+                        : headerActions.isNearby
+                        ? 'Nearby (<500m)'
+                        : headerActions.userDistanceMeters !== null
+                        ? `~${Math.round(headerActions.userDistanceMeters)}m`
+                        : 'GPS'}
+                    </span>
+                    <RotateCw
+                      className={`w-2.5 h-2.5 opacity-60 ml-0.5 ${
+                        headerActions.locationLoading ? 'animate-spin' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {/* Share Report Button */}
+                  <button
+                    type="button"
+                    onClick={headerActions.handleShare}
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white border border-[#E0E2EC] hover:bg-[#F1F3F4] text-[#5F6368] hover:text-[#1F1F1F] flex items-center justify-center transition-colors shadow-2xs shrink-0"
+                    title="Share report link"
+                    aria-label="Share report"
+                  >
+                    {headerActions.copiedLink ? (
+                      <Check className="w-3.5 h-3.5 text-[#0F9D58]" />
+                    ) : (
+                      <Share2 className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
+              {/* How it Works / Privacy Modal Trigger */}
+              <button
+                onClick={() => setShowInfoModal(true)}
+                className="m3-btn-tonal text-xs py-1.5 px-2.5 sm:px-3.5 text-[#041E49] flex items-center space-x-1.5"
+                title="How it Works & Privacy"
+                aria-label="How it works"
+              >
+                <ShieldCheck className="w-4 h-4 text-[#0F9D58] shrink-0" />
+                <span className="hidden sm:inline">How It Works</span>
+              </button>
+
+              {/* Universal Top Report CTA (Visible across all screens) */}
+              <Link
+                href="/report"
+                className="m3-btn-primary text-xs sm:text-sm py-1.5 px-3 sm:px-4 font-semibold shadow-sm flex items-center space-x-1.5 shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Report<span className="hidden sm:inline"> Issue</span></span>
+              </Link>
+            </div>
+          )}
+        </div>
         </div>
 
-        {/* Mobile Navigation Drawer (Decluttered: No duplicate Report CTA) */}
-        {mobileMenuOpen && (
-          <div className="md:hidden pt-3 pb-2 mt-2 border-t-2 border-zinc-900 space-y-2 animate-in slide-in-from-top-2 duration-150">
-            <Link
-              href="/"
-              onClick={() => setMobileMenuOpen(false)}
-              className={`flex items-center justify-between p-2.5 rounded-lg text-xs font-bold ${
-                pathname === '/'
-                  ? 'bg-zinc-900 text-white'
-                  : 'bg-white border-2 border-zinc-900 text-zinc-900 shadow-[2px_2px_0px_0px_#18181b]'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <MapPin className="w-4 h-4" />
-                <span>Live Map & Public Ledger</span>
+        {/* Mobile & Tablet Search Bar, Filter Dropdown & Map/Feed Toggle (Unified in Navbar component) */}
+        {!isIssuePage && pathname === '/' && (
+          <div className="lg:hidden px-3.5 sm:px-6 pb-2.5 pt-0.5">
+            <div className="flex items-center gap-2 max-w-7xl mx-auto">
+              {/* Search Field */}
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#747775]" />
+                <input
+                  type="text"
+                  placeholder="Search DIGIPIN or keyword..."
+                  value={search}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  className="w-full pl-9 pr-8 py-1.5 sm:py-2 text-xs bg-[#F8F9FA] hover:bg-[#F1F3F4] border border-[#C4C7C5] focus:border-[#1A73E8] focus:bg-white rounded-full focus:outline-none focus:ring-1 focus:ring-[#1A73E8] text-[#1F1F1F] placeholder-[#747775] transition-all"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={clearSearch}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#747775] hover:text-[#1F1F1F]"
+                    aria-label="Clear search"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
-              <span className="text-[10px] uppercase font-mono tracking-wider opacity-75">Feed</span>
-            </Link>
 
-            <button
-              onClick={() => {
-                setMobileMenuOpen(false);
-                setShowInfoModal(true);
-              }}
-              className="w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-bold bg-[#E0F2FE] border-2 border-zinc-900 text-sky-950 shadow-[2px_2px_0px_0px_#18181b]"
-            >
-              <div className="flex items-center space-x-2">
-                <ShieldCheck className="w-4 h-4 text-sky-800" />
-                <span>Anonymity & DIGIPIN Protocol</span>
+              {/* Filter Dropdown */}
+              <div className="relative shrink-0">
+                <select
+                  value={category}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
+                  className="appearance-none pl-7 sm:pl-8 pr-7 sm:pr-8 py-1.5 sm:py-2 text-xs font-semibold bg-[#F8F9FA] hover:bg-[#F1F3F4] text-[#1F1F1F] border border-[#C4C7C5] focus:border-[#1A73E8] rounded-full focus:outline-none focus:ring-1 focus:ring-[#1A73E8] cursor-pointer transition-all max-w-[130px] sm:max-w-[180px] truncate"
+                >
+                  {ISSUE_CATEGORIES.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.label}
+                    </option>
+                  ))}
+                </select>
+                <Filter className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#5F6368] pointer-events-none" />
+                <ChevronDown className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-[#5F6368] pointer-events-none" />
               </div>
-              <Info className="w-3.5 h-3.5 text-sky-800" />
-            </button>
+
+              {/* Tablet Map vs Feed Toggle Pill */}
+              <div className="hidden sm:flex items-center bg-[#F1F3F4] p-0.5 rounded-full shrink-0 border border-[#E0E2EC]">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('map')}
+                  className={`flex items-center space-x-1 py-1 px-3 rounded-full text-xs font-semibold transition-all ${
+                    viewMode === 'map' ? 'bg-[#1A73E8] text-white shadow-xs' : 'text-[#5F6368] hover:text-[#1F1F1F]'
+                  }`}
+                >
+                  <Map className="w-3.5 h-3.5" />
+                  <span>Map</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('ledger')}
+                  className={`flex items-center space-x-1 py-1 px-3 rounded-full text-xs font-semibold transition-all ${
+                    viewMode === 'ledger' ? 'bg-[#1A73E8] text-white shadow-xs' : 'text-[#5F6368] hover:text-[#1F1F1F]'
+                  }`}
+                >
+                  <ListFilter className="w-3.5 h-3.5" />
+                  <span>Feed</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </header>
 
-      {/* Protocol Architecture & Anonymity Modal (z-[9999] floats above Map and all overlay panes) */}
+      {/* Material 3 Privacy & How it Works Dialog Modal */}
       {showInfoModal && (
-        <div
-          onClick={() => setShowInfoModal(false)}
-          className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-[#FDFCF9] border-3 border-zinc-900 rounded-2xl shadow-[6px_6px_0px_0px_#18181b] max-w-lg w-full p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto pointer-events-auto"
-          >
-            <div className="flex items-start justify-between">
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-xl w-full max-h-[85vh] overflow-y-auto shadow-m3-elevation-4 border border-[#E0E2EC] p-6 text-[#1F1F1F]">
+            <div className="flex items-center justify-between pb-4 border-b border-[#E0E2EC]">
               <div className="flex items-center space-x-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#DCFCE7] border-2 border-zinc-900 flex items-center justify-center shadow-[2px_2px_0px_0px_#18181b]">
-                  <Lock className="w-4 h-4 text-emerald-950" />
+                <div className="w-9 h-9 rounded-full bg-[#E8F0FE] flex items-center justify-center text-[#1A73E8]">
+                  <ShieldCheck className="w-5 h-5 text-[#1A73E8]" />
                 </div>
                 <div>
-                  <h3 className="font-black text-base text-zinc-900">How CivicTrace Works</h3>
-                  <p className="text-xs font-semibold text-zinc-600">Zero Accounts · Zero PII Storage</p>
+                  <h3 className="text-base font-bold text-[#1F1F1F]">
+                    How CivicTrace Works
+                  </h3>
+                  <p className="text-xs text-[#5F6368]">
+                    Anonymous, community-verified public reporting
+                  </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowInfoModal(false)}
-                className="p-1.5 rounded-lg border-2 border-zinc-900 hover:bg-zinc-200 transition-colors"
-                aria-label="Close Protocol Modal"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-[#5F6368] hover:bg-[#F1F3F4] hover:text-[#1F1F1F] transition-colors"
+                aria-label="Close dialog"
               >
-                <X className="w-4 h-4 text-zinc-900" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs text-zinc-700 leading-relaxed">
-              <div className="p-3 bg-[#FEF3C7] border-2 border-zinc-900 rounded-xl space-y-1">
-                <div className="font-extrabold text-amber-950 flex items-center space-x-1.5">
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>1. India DIGIPIN Standardization</span>
+            <div className="py-4 space-y-3.5 text-xs sm:text-sm text-[#444746] leading-relaxed">
+              <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#E9EEF6] space-y-1.5">
+                <div className="flex items-center space-x-2 font-semibold text-[#1A73E8]">
+                  <Lock className="w-4 h-4" />
+                  <span>100% Anonymous & Private</span>
                 </div>
-                <p className="text-amber-900">
-                  Every civic hazard is locked to an exact 10-character alphanumeric grid cell (~4m × 4m). Upon report intake, GPS coordinates are snapped directly to the cell centroid and raw floats are immediately discarded from memory.
+                <p className="text-xs text-[#5F6368] leading-normal">
+                  You never need to log in, create an account, or share your phone number. Your phone confirms your vote privately without revealing who you are.
                 </p>
               </div>
 
-              <div className="p-3 bg-[#E0F2FE] border-2 border-zinc-900 rounded-xl space-y-1">
-                <div className="font-extrabold text-sky-950 flex items-center space-x-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>2. Hardware-Attested Nullifiers</span>
+              <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#E9EEF6] space-y-1.5">
+                <div className="flex items-center space-x-2 font-semibold text-[#0F9D58]">
+                  <MapPin className="w-4 h-4" />
+                  <span>Exact Location via India DIGIPIN</span>
                 </div>
-                <p className="text-sky-900">
-                  Your device derives a persistent Pseudorandom Key (PRK) locally. Each action computes a one-way nullifier (<code className="font-mono bg-white px-1 rounded">HMAC-SHA256(PRK, IssueID)</code>) ensuring one action per device per issue without linking activity across different issues.
+                <p className="text-xs text-[#5F6368] leading-normal">
+                  Issues are matched to India&apos;s official postal grid code (DIGIPIN). City authorities know exactly where the issue is, but your personal GPS location is never saved or tracked.
                 </p>
               </div>
 
-              <div className="p-3 bg-[#F3E8FF] border-2 border-zinc-900 rounded-xl space-y-1">
-                <div className="font-extrabold text-purple-950 flex items-center space-x-1.5">
-                  <Radio className="w-3.5 h-3.5" />
-                  <span>3. Local Ephemeral Verification</span>
+              <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#E9EEF6] space-y-1.5">
+                <div className="flex items-center space-x-2 font-semibold text-[#EA8600]">
+                  <FileCheck2 className="w-4 h-4" />
+                  <span>Privacy on Photos & Descriptions</span>
                 </div>
-                <p className="text-purple-900">
-                  Participants must be within 500m of the issue centroid to confirm or dispute. Community consensus scores govern priority escalation and community-verified contractor rectifications.
+                <p className="text-xs text-[#5F6368] leading-normal">
+                  Faces and vehicle license plates in photos are automatically blurred on your device before uploading to ensure everyone&apos;s privacy.
                 </p>
               </div>
             </div>
 
-            <div className="pt-1">
+            <div className="pt-3 border-t border-[#E0E2EC] flex justify-end">
               <button
                 onClick={() => setShowInfoModal(false)}
-                className="editorial-btn w-full py-2.5 bg-zinc-900 text-white text-xs font-bold shadow-[2px_2px_0px_0px_#18181b]"
+                className="m3-btn-tonal text-xs px-5 py-2 font-semibold"
               >
-                Understood & Close
+                Got It
               </button>
             </div>
           </div>
@@ -213,4 +413,3 @@ export const Navbar: React.FC = () => {
     </>
   );
 };
-

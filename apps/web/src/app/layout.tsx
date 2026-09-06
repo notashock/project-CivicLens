@@ -1,6 +1,10 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import './globals.css';
 import { Navbar } from '@/components/Navbar';
+import { BottomNav } from '@/components/BottomNav';
+import { SearchFilterProvider } from '@/context/SearchFilterContext';
+import { ActiveIssueProvider } from '@/context/ActiveIssueContext';
 
 export const metadata: Metadata = {
   title: 'CivicTrace — Anonymous, Community-Verified Civic Accountability',
@@ -14,10 +18,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="bg-[#FBF9F5] text-zinc-900 min-h-screen flex flex-col antialiased selection:bg-[#FEF3C7] selection:text-amber-950">
-        <Navbar />
-        <main className="flex-1 flex flex-col">{children}</main>
+    <html lang="en" className="h-full">
+      <body className="bg-[#F8F9FA] text-[#1F1F1F] h-full h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden antialiased selection:bg-[#D3E3FD] selection:text-[#041E49]">
+        <ActiveIssueProvider>
+          <SearchFilterProvider>
+            <Navbar />
+            <main className="flex-1 min-h-0 flex flex-col overflow-hidden relative">{children}</main>
+            <Suspense fallback={null}>
+              <BottomNav />
+            </Suspense>
+          </SearchFilterProvider>
+        </ActiveIssueProvider>
       </body>
     </html>
   );
